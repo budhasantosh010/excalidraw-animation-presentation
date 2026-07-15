@@ -19,7 +19,7 @@ If SSH is not configured on the new laptop, clone with `https://github.com/budha
 
 1. Draw a title, shapes, arrows, and labels in Excalidraw.
 2. Optionally click **Add 16:9 frame** to create a video-sized scene.
-3. Select an element or group, leave the effect on **Auto**, then click **Assign + next**. Auto fades shapes/text, pops images, and draws arrows, lines, and freehand strokes. Bound labels and grouped elements reveal together.
+3. Select one element, leave the effect on **Auto**, then click **Assign + next**. Auto gives shapes and images a scale-plus-fade entrance, fades text, and draws arrows, lines, and freehand strokes. Connected and bound objects keep independent steps; multi-select objects only when you intentionally want them on the same step.
 4. Repeat for the remaining steps. Colored canvas badges and the Sequence panel show the order. Use the explicit effect menu only when you want to override Auto.
 5. Click **Present**, then **Play**. Choose a playback speed, press Space to play/pause, or use Left/Right Arrow for manual stepping. Fullscreen and record with OBS or Windows Game Bar.
 6. Click **Save** to keep the drawing, animation metadata, and referenced images in an `.excalidraw` file. Use **Open** to restore it later.
@@ -37,7 +37,7 @@ Select exactly one image and click **Remove background** to run background remov
 ## What this morning build includes
 
 - Full Excalidraw editor
-- Ordered reveal steps with bound/group selection closure
+- Ordered reveal steps assigned independently per selected object, including connected and bound objects
 - Separate read-only presentation player
 - Auto effect selection, fade/pop/draw-on/appear effects, autoplay speed controls, keyboard navigation, fullscreen, and 16:9 framing
 - Save/open with versioned animation metadata and referenced image files

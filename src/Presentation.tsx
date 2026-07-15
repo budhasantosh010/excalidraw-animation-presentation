@@ -9,6 +9,7 @@ import {
   getAnimationFrameChanges,
   getAutoplayIntervalMs,
   getElementAnimation,
+  getEntranceAnimationFrameChanges,
   getSettledAnimationFrameChanges,
   getStepCount,
   resolveAnimationEffect,
@@ -29,10 +30,20 @@ export function Presentation({ snapshot, onExit }: PresentationProps) {
   const previousStep = useRef(0)
   const renderedById = useRef(new Map<string, ExcalidrawElement>())
   const stepCount = useMemo(() => getStepCount(snapshot.elements), [snapshot])
-  const visibleElements = useMemo(
+  const baseElements = useMemo(
     () => compileAtStep(snapshot.elements, currentStep),
     [currentStep, snapshot],
   )
+  const visibleElements = useMemo(() => {
+    if (currentStep <= previousStep.current) return baseElements
+
+    return baseElements.map((element) => {
+      const changes = getEntranceAnimationFrameChanges(element, currentStep, 0)
+      return changes
+        ? ({ ...element, ...changes } as ExcalidrawElement)
+        : element
+    })
+  }, [baseElements, currentStep])
 
   const goToStep = useCallback(
     (nextStep: number) => {
@@ -145,23 +156,6 @@ export function Presentation({ snapshot, onExit }: PresentationProps) {
       animationFrame.current = null
     }
 
-    const baseElements = visibleElements
-    for (const element of baseElements) {
-      const previous = renderedById.current.get(element.id) ?? element
-      const settledChanges = getSettledAnimationFrameChanges(
-        element,
-        currentStep,
-      )
-      renderedById.current.set(
-        element.id,
-        settledChanges
-          ? newElementWith(
-              previous,
-              settledChanges as Partial<ExcalidrawElement>,
-            )
-          : previous,
-      )
-    }
     const isForward = currentStep > previousStep.current
     const animatedIds = new Set(
       baseElements
@@ -175,18 +169,40 @@ export function Presentation({ snapshot, onExit }: PresentationProps) {
         .map((element) => element.id),
     )
 
+    const preparedElements = baseElements.map((element) => {
+      let prepared = renderedById.current.get(element.id) ?? element
+      const settledChanges = getSettledAnimationFrameChanges(
+        element,
+        currentStep,
+      )
+      if (settledChanges) {
+        prepared = newElementWith(
+          prepared,
+          settledChanges as Partial<ExcalidrawElement>,
+        )
+      }
+      if (isForward && animatedIds.has(element.id)) {
+        const entranceChanges = getEntranceAnimationFrameChanges(
+          element,
+          currentStep,
+          0,
+        )
+        if (entranceChanges) {
+          prepared = newElementWith(
+            prepared,
+            entranceChanges as Partial<ExcalidrawElement>,
+          )
+        }
+      }
+      renderedById.current.set(element.id, prepared)
+      return prepared
+    })
+
     previousStep.current = currentStep
 
+    api.updateScene({ elements: preparedElements })
+
     if (!isForward || !animatedIds.size) {
-      for (const element of baseElements) {
-        const previous = renderedById.current.get(element.id)
-        renderedById.current.set(element.id, previous ?? element)
-      }
-      api.updateScene({
-        elements: baseElements.map(
-          (element) => renderedById.current.get(element.id) ?? element,
-        ),
-      })
       return
     }
 
@@ -231,7 +247,7 @@ export function Presentation({ snapshot, onExit }: PresentationProps) {
         animationFrame.current = null
       }
     }
-  }, [api, currentStep, playbackSpeed, visibleElements])
+  }, [api, baseElements, currentStep, playbackSpeed])
 
   useEffect(() => {
     if (!api) return

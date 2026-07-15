@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   assignStep,
   bumpAnimationElementVersion,
+  clearStep,
   compileAtStep,
   getAutoplayIntervalMs,
   getAnimationFrameChanges,
   getElementAnimation,
+  getEntranceAnimationFrameChanges,
   getOrderBadgePosition,
   getSelectionClosure,
   getSettledAnimationFrameChanges,
@@ -48,7 +50,7 @@ describe('animation scene compiler', () => {
     expect(resolveAnimationEffect(element('ink', 'freedraw'), 'auto')).toBe('draw')
     expect(resolveAnimationEffect(element('logo', 'image'), 'auto')).toBe('pop')
     expect(resolveAnimationEffect(element('caption', 'text'), 'auto')).toBe('fade')
-    expect(resolveAnimationEffect(element('box'), 'auto')).toBe('fade')
+    expect(resolveAnimationEffect(element('box'), 'auto')).toBe('pop')
     expect(resolveAnimationEffect(element('override', 'arrow'), 'appear')).toBe(
       'appear',
     )
@@ -136,6 +138,51 @@ describe('animation scene compiler', () => {
     })
   })
 
+  it('starts an auto-animated shape scaled down and transparent', () => {
+    const box = {
+      ...element('box'),
+      x: 100,
+      y: 200,
+      width: 200,
+      height: 100,
+      opacity: 100,
+    } as ExcalidrawElement
+
+    expect(getAnimationFrameChanges(box, 'auto', 0)).toEqual({
+      x: 114,
+      y: 207,
+      width: 172,
+      height: 86,
+      opacity: 0,
+    })
+  })
+
+  it('provides the hidden first frame before a newly revealed shape is painted', () => {
+    const box = assignStep(
+      [
+        {
+          ...element('box'),
+          x: 100,
+          y: 200,
+          width: 200,
+          height: 100,
+        } as ExcalidrawElement,
+      ],
+      ['box'],
+      2,
+      'scene-a',
+    )[0]!
+
+    expect(getEntranceAnimationFrameChanges(box, 2, 0)).toEqual({
+      x: 114,
+      y: 207,
+      width: 172,
+      height: 86,
+      opacity: 0,
+    })
+    expect(getEntranceAnimationFrameChanges(box, 1, 0)).toBeUndefined()
+  })
+
   it('converts playback speed into a bounded autoplay interval', () => {
     expect(getAutoplayIntervalMs(1)).toBe(900)
     expect(getAutoplayIntervalMs(2)).toBe(450)
@@ -218,6 +265,45 @@ describe('animation scene compiler', () => {
       step: 3,
       effect: 'fade',
     })
+  })
+
+  it('assigns only the selected object when objects are connected', () => {
+    const left = element('left', 'rectangle', {
+      boundElements: [{ id: 'connector', type: 'arrow' }],
+    })
+    const connector = element('connector', 'arrow')
+    const right = element('right', 'rectangle', {
+      boundElements: [{ id: 'connector', type: 'arrow' }],
+    })
+
+    const assigned = assignStep(
+      [left, connector, right],
+      [left.id],
+      1,
+      'scene-a',
+    )
+
+    expect(getElementAnimation(assigned[0]!)).toMatchObject({ step: 1 })
+    expect(getElementAnimation(assigned[1]!)).toBeUndefined()
+    expect(getElementAnimation(assigned[2]!)).toBeUndefined()
+  })
+
+  it('clears only the selected object when objects are connected', () => {
+    const left = element('left', 'rectangle', {
+      boundElements: [{ id: 'connector', type: 'arrow' }],
+    })
+    const connector = element('connector', 'arrow')
+    const assigned = assignStep(
+      [left, connector],
+      [left.id, connector.id],
+      1,
+      'scene-a',
+    )
+
+    const cleared = clearStep(assigned, [left.id])
+
+    expect(getElementAnimation(cleared[0]!)).toBeUndefined()
+    expect(getElementAnimation(cleared[1]!)).toMatchObject({ step: 1 })
   })
 
   it('compiles only elements visible at the requested step', () => {

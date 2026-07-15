@@ -106,7 +106,14 @@ export const resolveAnimationEffect = (
   ) {
     return 'draw'
   }
-  if (element.type === 'image') return 'pop'
+  if (
+    element.type === 'image' ||
+    element.type === 'rectangle' ||
+    element.type === 'diamond' ||
+    element.type === 'ellipse'
+  ) {
+    return 'pop'
+  }
   return 'fade'
 }
 
@@ -188,10 +195,10 @@ export const assignStep = (
     1,
     Math.min(MAX_ANIMATION_STEP, normalizedStep),
   )
-  const closure = getSelectionClosure(elements, selectedIds)
+  const selectedIdSet = new Set(selectedIds)
 
   return elements.map((element) => {
-    if (element.isDeleted || !closure.has(element.id)) return element
+    if (element.isDeleted || !selectedIdSet.has(element.id)) return element
 
     const animation: SanverseAnimation = {
       version: 1,
@@ -213,10 +220,10 @@ export const clearStep = (
   elements: readonly ExcalidrawElement[],
   selectedIds: ReadonlySet<string> | readonly string[],
 ): ExcalidrawElement[] => {
-  const closure = getSelectionClosure(elements, selectedIds)
+  const selectedIdSet = new Set(selectedIds)
 
   return elements.map((element) => {
-    if (element.isDeleted || !closure.has(element.id)) return element
+    if (element.isDeleted || !selectedIdSet.has(element.id)) return element
 
     const customData: Record<string, unknown> = { ...element.customData }
     delete customData[METADATA_KEY]
@@ -364,6 +371,23 @@ export const getAnimationFrameChanges = (
   }
 
   return {}
+}
+
+export const getEntranceAnimationFrameChanges = (
+  element: ExcalidrawElement,
+  currentStep: number,
+  progress: number,
+): AnimationFrameChanges | undefined => {
+  const animation = getElementAnimation(element)
+  if (
+    !animation ||
+    animation.step !== Math.max(0, Math.trunc(currentStep)) ||
+    resolveAnimationEffect(element, animation.effect) === 'appear'
+  ) {
+    return undefined
+  }
+
+  return getAnimationFrameChanges(element, animation.effect, progress)
 }
 
 export const getSettledAnimationFrameChanges = (
