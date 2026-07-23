@@ -20,6 +20,7 @@ export type AnimationMcpConfig = {
   port: number
   routeSecret: string
   outputDir: string
+  allowedHosts: string[]
 }
 
 const allowedOrigins = new Set([
@@ -120,7 +121,10 @@ export const startAnimationMcpServer = async (config: AnimationMcpConfig) => {
     throw new Error('Route secret must contain at least 43 URL-safe characters.')
   }
 
-  const app = createMcpExpressApp({ host: config.host })
+  const app = createMcpExpressApp({
+    host: config.host,
+    allowedHosts: config.allowedHosts,
+  })
   const mcpPath = `/mcp/${config.routeSecret}/`
 
   app.get('/health', (_request, response) => {
@@ -134,7 +138,7 @@ export const startAnimationMcpServer = async (config: AnimationMcpConfig) => {
 
   app.use(mcpPath, (request, response, next) => {
     const origin = request.header('origin')
-    if (!origin || !allowedOrigins.has(origin)) {
+    if (origin && !allowedOrigins.has(origin)) {
       response.status(403).json({ error: 'Forbidden' })
       return
     }
@@ -198,11 +202,18 @@ if (isDirectRun) {
   const outputDir = resolve(
     process.env.ANIMATION_OUTPUT_DIR ?? 'outputs/mcp-animations',
   )
+  const allowedHosts = (
+    process.env.MCP_ALLOWED_HOSTS ?? '127.0.0.1,localhost'
+  )
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean)
   const running = await startAnimationMcpServer({
     host: '127.0.0.1',
     port: 3002,
     routeSecret,
     outputDir,
+    allowedHosts,
   })
   console.log(`Animation MCP listening on 127.0.0.1:${running.port}`)
 }

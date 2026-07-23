@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -68,7 +69,77 @@ const textResult = (result: unknown) => {
   >
 }
 
+const requestHealthWithHost = (port: number, host: string) =>
+  new Promise<number>((resolve, reject) => {
+    const healthRequest = request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: '/health',
+        headers: { Host: host },
+      },
+      (response) => {
+        response.resume()
+        resolve(response.statusCode ?? 0)
+      },
+    )
+    healthRequest.once('error', reject)
+    healthRequest.end()
+  })
+
+const startOriginTestServer = async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'animation-mcp-origin-'))
+  const secret = 'o'.repeat(43)
+  const running = await startAnimationMcpServer({
+    host: '127.0.0.1',
+    port: 0,
+    routeSecret: secret,
+    outputDir,
+    allowedHosts: ['127.0.0.1', 'localhost'],
+  })
+  cleanup.push(async () => {
+    await running.close()
+    await rm(outputDir, { recursive: true, force: true })
+  })
+  return { port: running.port, secret }
+}
+
 describe('lean animation MCP', () => {
+  it.each([
+    ['missing Origin', undefined],
+    ['ChatGPT Origin', 'https://chatgpt.com'],
+    ['legacy ChatGPT Origin', 'https://chat.openai.com'],
+  ])('allows %s', async (_label, origin) => {
+    const { port, secret } = await startOriginTestServer()
+    const client = new Client({ name: 'origin-test', version: '1.0.0' })
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${port}/mcp/${secret}/`),
+      origin
+        ? { requestInit: { headers: { Origin: origin } } }
+        : undefined,
+    )
+    await client.connect(transport)
+    cleanup.push(() => client.close())
+
+    const tools = await client.listTools()
+    expect(tools.tools).toHaveLength(5)
+  })
+
+  it('rejects any other present Origin', async () => {
+    const { port, secret } = await startOriginTestServer()
+    const client = new Client({ name: 'origin-test', version: '1.0.0' })
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${port}/mcp/${secret}/`),
+      {
+        requestInit: {
+          headers: { Origin: 'https://example.com' },
+        },
+      },
+    )
+
+    await expect(client.connect(transport)).rejects.toThrow(/403|Forbidden/)
+  })
+
   it('initializes, lists five tools, reports status, and creates an animation', async () => {
     const outputDir = await mkdtemp(join(tmpdir(), 'animation-mcp-'))
     const secret = 's'.repeat(43)
@@ -77,6 +148,11 @@ describe('lean animation MCP', () => {
       port: 0,
       routeSecret: secret,
       outputDir,
+      allowedHosts: [
+        '127.0.0.1',
+        'localhost',
+        'desktop-fdce9ak.taila47816.ts.net',
+      ],
     })
     cleanup.push(async () => {
       await running.close()
@@ -90,6 +166,12 @@ describe('lean animation MCP', () => {
     )
     await client.connect(transport)
     cleanup.push(() => client.close())
+
+    const publicHealthStatus = await requestHealthWithHost(
+      running.port,
+      'desktop-fdce9ak.taila47816.ts.net',
+    )
+    expect(publicHealthStatus).toBe(200)
 
     const tools = await client.listTools()
     expect(tools.tools.map((tool) => tool.name)).toEqual([
