@@ -51,6 +51,7 @@ try {
         "revise_animation"
         "validate_animation"
         "list_animations"
+        "open_animation_studio"
     )
     if (($toolNames -join ",") -ne ($expectedTools -join ",")) {
         throw "Unexpected MCP tool list."

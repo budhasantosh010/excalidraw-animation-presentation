@@ -37,6 +37,10 @@ import {
   type IconifyResult,
 } from './assets'
 import { removeImageBackground } from './backgroundRemoval'
+import {
+  DraggableControllerBar,
+} from './DraggableControllerBar'
+import type { ControllerPlacement } from './controllerPosition'
 
 export type EditorSnapshot = {
   elements: readonly ExcalidrawElement[]
@@ -46,17 +50,33 @@ export type EditorSnapshot = {
 }
 
 type EditorProps = {
+  controllerPlacement: ControllerPlacement
   onPresent: (snapshot: EditorSnapshot) => void
+  onSnapshotChange?: (snapshot: EditorSnapshot) => void
+  initialSnapshot?: EditorSnapshot
+  showAssetTools?: boolean
 }
 
-export function Editor({ onPresent }: EditorProps) {
+export function Editor({
+  controllerPlacement,
+  onPresent,
+  onSnapshotChange,
+  initialSnapshot,
+  showAssetTools = true,
+}: EditorProps) {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [step, setStep] = useState(1)
   const [effect, setEffect] = useState<SanverseAnimation['effect']>('auto')
-  const [stepCount, setStepCount] = useState(0)
-  const [liveElements, setLiveElements] = useState<readonly ExcalidrawElement[]>([])
-  const [liveFiles, setLiveFiles] = useState<BinaryFiles>({})
+  const [stepCount, setStepCount] = useState(() =>
+    getStepCount(initialSnapshot?.elements ?? []),
+  )
+  const [liveElements, setLiveElements] = useState<readonly ExcalidrawElement[]>(
+    initialSnapshot?.elements ?? [],
+  )
+  const [liveFiles, setLiveFiles] = useState<BinaryFiles>(
+    initialSnapshot?.files ?? {},
+  )
   const [viewport, setViewport] = useState<AnimationViewport>({
     scrollX: 0,
     scrollY: 0,
@@ -71,10 +91,15 @@ export function Editor({ onPresent }: EditorProps) {
   const [icons, setIcons] = useState<IconifyResult[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
-  const latestElements = useRef<readonly ExcalidrawElement[]>([])
-  const latestAppState = useRef<Partial<AppState>>({})
-  const latestFiles = useRef<BinaryFiles>({})
+  const latestElements = useRef<readonly ExcalidrawElement[]>(
+    initialSnapshot?.elements ?? [],
+  )
+  const latestAppState = useRef<Partial<AppState>>(
+    initialSnapshot?.appState ?? {},
+  )
+  const latestFiles = useRef<BinaryFiles>(initialSnapshot?.files ?? {})
   const sceneId = useRef(crypto.randomUUID())
+  const lastReportedScene = useRef('')
 
   const sequence = useMemo(() => {
     const rows = new Map<
@@ -434,6 +459,15 @@ export function Editor({ onPresent }: EditorProps) {
     <main className="editor-shell">
       <Excalidraw
         excalidrawAPI={setApi}
+        initialData={
+          initialSnapshot
+            ? {
+                elements: initialSnapshot.elements,
+                appState: initialSnapshot.appState,
+                files: initialSnapshot.files,
+              }
+            : undefined
+        }
         onChange={(elements, appState, files) => {
           latestElements.current = elements
           latestAppState.current = appState
@@ -460,6 +494,43 @@ export function Editor({ onPresent }: EditorProps) {
           )
           updateSelection(appState)
           setStepCount(getStepCount(elements))
+          if (onSnapshotChange) {
+            const selectedIds = Object.keys(appState.selectedElementIds)
+              .filter((id) => appState.selectedElementIds[id])
+              .sort()
+              .join(',')
+            const sceneKey = [
+              ...elements.map(
+                (element) =>
+                  `${element.id}:${element.version}:${element.versionNonce}:${element.isDeleted ? 1 : 0}`,
+              ),
+              `selected=${selectedIds}`,
+              `viewport=${appState.scrollX},${appState.scrollY},${appState.zoom.value}`,
+              `files=${Object.keys(files).sort().join(',')}`,
+            ].join('|')
+            if (sceneKey !== lastReportedScene.current) {
+              lastReportedScene.current = sceneKey
+              const frameId =
+                initialSnapshot?.frameId &&
+                elements.some(
+                  (element) =>
+                    !element.isDeleted &&
+                    element.type === 'frame' &&
+                    element.id === initialSnapshot.frameId,
+                )
+                  ? initialSnapshot.frameId
+                  : (elements.find(
+                      (element) =>
+                        !element.isDeleted && element.type === 'frame',
+                    )?.id ?? null)
+              onSnapshotChange({
+                elements,
+                appState,
+                files,
+                frameId,
+              })
+            }
+          }
         }}
       />
 
@@ -497,7 +568,8 @@ export function Editor({ onPresent }: EditorProps) {
         </aside>
       ) : null}
 
-      <aside className="assets-panel" aria-label="Image assets">
+      {showAssetTools ? (
+        <aside className="assets-panel" aria-label="Image assets">
         <button
           className="assets-toggle"
           type="button"
@@ -570,9 +642,14 @@ export function Editor({ onPresent }: EditorProps) {
             <small>Select exactly one image to remove its background.</small>
           </div>
         ) : null}
-      </aside>
+        </aside>
+      ) : null}
 
-      <section className="animation-toolbar" aria-label="Animation controls">
+      <DraggableControllerBar
+        className="animation-toolbar"
+        ariaLabel="Animation controls"
+        placement={controllerPlacement}
+      >
         <div className="toolbar-stat">
           <span>Selected</span>
           <strong>{selectedIds.length}</strong>
@@ -662,7 +739,7 @@ export function Editor({ onPresent }: EditorProps) {
         >
           Present
         </button>
-      </section>
+      </DraggableControllerBar>
     </main>
   )
 }

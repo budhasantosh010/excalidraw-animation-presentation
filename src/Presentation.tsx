@@ -15,21 +15,59 @@ import {
   resolveAnimationEffect,
 } from './animation'
 import type { EditorSnapshot } from './Editor'
+import {
+  DraggableControllerBar,
+} from './DraggableControllerBar'
+import type { ControllerPlacement } from './controllerPosition'
 
 type PresentationProps = {
+  controllerPlacement: ControllerPlacement
   snapshot: EditorSnapshot
   onExit: () => void
+  initialPlaybackState?: PresentationPlaybackState
+  onPlaybackStateChange?: (state: PresentationPlaybackState) => void
 }
 
-export function Presentation({ snapshot, onExit }: PresentationProps) {
+export type PresentationPlaybackState = {
+  currentStep: number
+  isPlaying: boolean
+  playbackSpeed: number
+}
+
+export function Presentation({
+  controllerPlacement,
+  snapshot,
+  onExit,
+  initialPlaybackState,
+  onPlaybackStateChange,
+}: PresentationProps) {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null)
-  const [currentStep, setCurrentStep] = useState(0)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [playbackSpeed, setPlaybackSpeed] = useState(1)
+  const [currentStep, setCurrentStep] = useState(
+    initialPlaybackState?.currentStep ?? 0,
+  )
+  const [isPlaying, setIsPlaying] = useState(
+    initialPlaybackState?.isPlaying ?? false,
+  )
+  const [playbackSpeed, setPlaybackSpeed] = useState(
+    initialPlaybackState?.playbackSpeed ?? 1,
+  )
   const animationFrame = useRef<number | null>(null)
   const previousStep = useRef(0)
   const renderedById = useRef(new Map<string, ExcalidrawElement>())
   const stepCount = useMemo(() => getStepCount(snapshot.elements), [snapshot])
+
+  useEffect(() => {
+    onPlaybackStateChange?.({
+      currentStep,
+      isPlaying,
+      playbackSpeed,
+    })
+  }, [
+    currentStep,
+    isPlaying,
+    onPlaybackStateChange,
+    playbackSpeed,
+  ])
   const baseElements = useMemo(
     () => compileAtStep(snapshot.elements, currentStep),
     [currentStep, snapshot],
@@ -294,7 +332,12 @@ export function Presentation({ snapshot, onExit }: PresentationProps) {
         {currentStep}/{stepCount}
       </div>
 
-      <nav className="presentation-controls" aria-label="Presentation controls">
+      <DraggableControllerBar
+        className="presentation-controls"
+        ariaLabel="Presentation controls"
+        placement={controllerPlacement}
+        role="navigation"
+      >
         <button type="button" onClick={() => moveManually(0)}>
           Restart
         </button>
@@ -303,7 +346,7 @@ export function Presentation({ snapshot, onExit }: PresentationProps) {
           disabled={currentStep === 0}
           onClick={() => moveManually(currentStep - 1)}
         >
-          Back
+          Previous
         </button>
         <button
           className="play-button"
@@ -339,7 +382,7 @@ export function Presentation({ snapshot, onExit }: PresentationProps) {
         <button type="button" onClick={handleExit}>
           Exit
         </button>
-      </nav>
+      </DraggableControllerBar>
     </main>
   )
 }

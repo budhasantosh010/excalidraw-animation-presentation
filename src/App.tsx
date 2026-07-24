@@ -3,10 +3,12 @@ import '@excalidraw/excalidraw/index.css'
 import './App.css'
 import { Editor, type EditorSnapshot } from './Editor'
 import { Presentation } from './Presentation'
+import { useControllerPlacement } from './useControllerPlacement'
 
 function App() {
   const [presentationSnapshot, setPresentationSnapshot] =
     useState<EditorSnapshot | null>(null)
+  const controllerPlacement = useControllerPlacement()
 
   return (
     <>
@@ -17,11 +19,15 @@ function App() {
         // only set it while presenting.
         {...(presentationSnapshot ? { inert: '' } : {})}
       >
-        <Editor onPresent={setPresentationSnapshot} />
+        <Editor
+          controllerPlacement={controllerPlacement}
+          onPresent={setPresentationSnapshot}
+        />
       </div>
 
       {presentationSnapshot ? (
         <Presentation
+          controllerPlacement={controllerPlacement}
           snapshot={presentationSnapshot}
           onExit={() => setPresentationSnapshot(null)}
         />

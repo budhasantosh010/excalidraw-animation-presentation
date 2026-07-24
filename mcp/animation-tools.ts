@@ -33,7 +33,7 @@ export type Storyboard = {
 }
 
 type ExcalidrawElement = Record<string, any>
-type ExcalidrawDocument = {
+export type ExcalidrawDocument = {
   type: 'excalidraw'
   version: 2
   source: 'local'
@@ -152,6 +152,9 @@ export const validateStoryboard = (value: unknown): Storyboard => {
         throw new Error(`Invalid animation metadata: ${element.id}`)
       }
     }
+  }
+  if (!storyboard.scenes.some((scene) => scene.elements.length > 0)) {
+    throw new Error('At least one drawable element is required.')
   }
   return storyboard
 }
@@ -325,6 +328,46 @@ export const validateAnimationDocument = (document: unknown) => {
   }
 }
 
+export const summarizeAnimationDocument = (
+  filename: string,
+  document: ExcalidrawDocument,
+  revision = 1,
+) => {
+  const drawableElements = document.elements.filter(
+    (element) => !element.isDeleted && element.type !== 'frame',
+  )
+  const animations = drawableElements.flatMap((element) => {
+    const animation = getElementAnimation(element as never)
+    return animation ? [animation] : []
+  })
+  const effectCounts: Record<AnimationEffect, number> = {
+    auto: 0,
+    appear: 0,
+    fade: 0,
+    pop: 0,
+    draw: 0,
+  }
+  for (const animation of animations) {
+    effectCounts[animation.effect] += 1
+  }
+
+  return {
+    filename,
+    revision,
+    sceneCount: document.elements.filter(
+      (element) => !element.isDeleted && element.type === 'frame',
+    ).length,
+    drawableElementCount: drawableElements.length,
+    totalSerializedElementCount: document.elements.length,
+    animatedElementCount: animations.length,
+    stepCount: animations.reduce(
+      (maximum, animation) => Math.max(maximum, animation.step),
+      0,
+    ),
+    effectCounts,
+  }
+}
+
 const safeOutputPath = (outputDir: string, filename: string) => {
   if (
     !/^[A-Za-z0-9._-]+\.excalidraw$/i.test(filename) ||
@@ -363,8 +406,7 @@ export const createAnimationFile = async (
   await atomicJsonWrite(target, document)
   return {
     status: 'created',
-    filename,
-    sceneCount: validation.sceneCount,
+    ...summarizeAnimationDocument(filename, document),
     elementCount: validation.elementCount,
     validationStatus: 'valid',
   }
