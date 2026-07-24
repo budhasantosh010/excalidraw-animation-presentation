@@ -10,15 +10,20 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "pretest": "npm run mcp:build-ui",
     "test": "vitest",
     "preview": "vite preview",
+    "mcp:build-ui": "vite build --config vite.mcp-app.config.ts",
+    "premcp:start": "npm run mcp:build-ui",
     "mcp:start": "tsx mcp/server.ts",
+    "premcp:test": "npm run mcp:build-ui",
     "mcp:test": "vitest run mcp/server.test.ts",
     "mcp:check": "tsc -p mcp/tsconfig.json"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
     "@imgly/background-removal": "^1.7.0",
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "1.29.0",
     "express": "5.1.0",
     "react": "^18.3.1",
@@ -35,6 +40,7 @@
     "tsx": "4.20.5",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^4.1.10"
   }
 }

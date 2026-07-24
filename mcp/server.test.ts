@@ -11,6 +11,8 @@ import { createAnimationFile } from './animation-tools.ts'
 import { startAnimationMcpServer } from './server.ts'
 
 const cleanup: Array<() => Promise<void>> = []
+const UI_RESOURCE_URI = 'ui://sanverse/animation-studio-v4.html'
+const PUBLIC_ORIGIN = 'https://desktop-fdce9ak.taila47816.ts.net'
 
 afterEach(async () => {
   while (cleanup.length) await cleanup.pop()?.()
@@ -87,6 +89,36 @@ const requestHealthWithHost = (port: number, host: string) =>
     healthRequest.end()
   })
 
+const requestAsset = (port: number, assetUrl: string) =>
+  new Promise<{
+    status: number
+    headers: Record<string, string | string[] | undefined>
+    body: Buffer
+  }>((resolve, reject) => {
+    const url = new URL(assetUrl)
+    const assetRequest = request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: `${url.pathname}${url.search}`,
+        headers: { Host: url.host },
+      },
+      (response) => {
+        const chunks: Buffer[] = []
+        response.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        response.on('end', () =>
+          resolve({
+            status: response.statusCode ?? 0,
+            headers: response.headers,
+            body: Buffer.concat(chunks),
+          }),
+        )
+      },
+    )
+    assetRequest.once('error', reject)
+    assetRequest.end()
+  })
+
 const startOriginTestServer = async () => {
   const outputDir = await mkdtemp(join(tmpdir(), 'animation-mcp-origin-'))
   const secret = 'o'.repeat(43)
@@ -96,6 +128,7 @@ const startOriginTestServer = async () => {
     routeSecret: secret,
     outputDir,
     allowedHosts: ['127.0.0.1', 'localhost'],
+    publicOrigin: PUBLIC_ORIGIN,
   })
   cleanup.push(async () => {
     await running.close()
@@ -122,7 +155,7 @@ describe('lean animation MCP', () => {
     cleanup.push(() => client.close())
 
     const tools = await client.listTools()
-    expect(tools.tools).toHaveLength(5)
+    expect(tools.tools).toHaveLength(6)
   })
 
   it('rejects any other present Origin', async () => {
@@ -140,7 +173,7 @@ describe('lean animation MCP', () => {
     await expect(client.connect(transport)).rejects.toThrow(/403|Forbidden/)
   })
 
-  it('initializes, lists five tools, reports status, and creates an animation', async () => {
+  it('initializes, exposes the UI resource, and hands the exact project to create/open', async () => {
     const outputDir = await mkdtemp(join(tmpdir(), 'animation-mcp-'))
     const secret = 's'.repeat(43)
     const running = await startAnimationMcpServer({
@@ -153,6 +186,7 @@ describe('lean animation MCP', () => {
         'localhost',
         'desktop-fdce9ak.taila47816.ts.net',
       ],
+      publicOrigin: PUBLIC_ORIGIN,
     })
     cleanup.push(async () => {
       await running.close()
@@ -180,7 +214,70 @@ describe('lean animation MCP', () => {
       'revise_animation',
       'validate_animation',
       'list_animations',
+      'open_animation_studio',
     ])
+    for (const name of ['create_animation', 'open_animation_studio']) {
+      expect(tools.tools.find((tool) => tool.name === name)?._meta).toMatchObject(
+        {
+          ui: { resourceUri: UI_RESOURCE_URI },
+        },
+      )
+    }
+
+    const resources = await client.listResources()
+    expect(resources.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ uri: UI_RESOURCE_URI }),
+      ]),
+    )
+    const resource = await client.readResource({ uri: UI_RESOURCE_URI })
+    const resourceContent = resource.contents[0]
+    expect(resourceContent).toMatchObject({
+      uri: UI_RESOURCE_URI,
+      mimeType: 'text/html;profile=mcp-app',
+      _meta: {
+        ui: {
+          csp: {
+            resourceDomains: [PUBLIC_ORIGIN],
+          },
+        },
+      },
+    })
+    const resourceHtml =
+      'text' in resourceContent ? resourceContent.text : ''
+    expect(Buffer.byteLength(resourceHtml, 'utf8')).toBeLessThan(20_000)
+    expect(resourceHtml).toContain('Sanverse Animation Studio')
+    expect(resourceHtml).toContain('id="root"')
+    expect(resourceHtml).toContain('Animation Studio failed to load')
+    expect(resourceHtml).not.toContain('Animation Studio connection proof')
+
+    const scriptUrl = resourceHtml.match(
+      /<script[^>]+src="(?<url>https:[^"]+\.js)"/,
+    )?.groups?.url
+    const styleUrl = resourceHtml.match(
+      /<link[^>]+href="(?<url>https:[^"]+\.css)"/,
+    )?.groups?.url
+    expect(scriptUrl).toMatch(
+      /^https:\/\/desktop-fdce9ak\.taila47816\.ts\.net\/mcp-app-assets\/[a-f0-9]{16}\/assets\/.+-[A-Za-z0-9_-]+\.js$/,
+    )
+    expect(styleUrl).toMatch(
+      /^https:\/\/desktop-fdce9ak\.taila47816\.ts\.net\/mcp-app-assets\/[a-f0-9]{16}\/assets\/.+-[A-Za-z0-9_-]+\.css$/,
+    )
+
+    const [scriptAsset, styleAsset] = await Promise.all([
+      requestAsset(running.port, scriptUrl ?? ''),
+      requestAsset(running.port, styleUrl ?? ''),
+    ])
+    expect(scriptAsset.status).toBe(200)
+    expect(scriptAsset.headers['content-type']).toMatch(/javascript/)
+    expect(scriptAsset.headers['access-control-allow-origin']).toBe('*')
+    expect(scriptAsset.headers['cache-control']).toMatch(/immutable/)
+    expect(scriptAsset.body.length).toBeGreaterThan(100_000)
+    expect(styleAsset.status).toBe(200)
+    expect(styleAsset.headers['content-type']).toMatch(/text\/css/)
+    expect(styleAsset.headers['access-control-allow-origin']).toBe('*')
+    expect(styleAsset.headers['cache-control']).toMatch(/immutable/)
+    expect(styleAsset.body.length).toBeGreaterThan(10_000)
 
     const status = textResult(
       await client.callTool({
@@ -190,12 +287,11 @@ describe('lean animation MCP', () => {
     )
     expect(status).toMatchObject({ status: 'ok', port: running.port })
 
-    const created = textResult(
-      await client.callTool({
+    const createResult = await client.callTool({
         name: 'create_animation',
         arguments: { storyboard },
-      }),
-    )
+      })
+    const created = textResult(createResult)
     const filename = String(created.filename)
     const document = JSON.parse(
       await readFile(join(outputDir, filename), 'utf8'),
@@ -208,8 +304,41 @@ describe('lean animation MCP', () => {
 
     expect(created).toMatchObject({
       status: 'created',
+      revision: 1,
       sceneCount: 1,
+      drawableElementCount: 5,
+      animatedElementCount: 5,
+      stepCount: 3,
       validationStatus: 'valid',
+      uiResourceUri: UI_RESOURCE_URI,
+      uiResourceAttached: true,
+    })
+    expect(createResult.structuredContent).toMatchObject(created)
+    expect(createResult._meta).toMatchObject({
+      filename,
+      revision: 1,
+      uiResourceUri: UI_RESOURCE_URI,
+      projectSnapshot: document,
+    })
+
+    const openResult = await client.callTool({
+      name: 'open_animation_studio',
+      arguments: { filename },
+    })
+    expect(textResult(openResult)).toMatchObject({
+      filename,
+      revision: 1,
+      drawableElementCount: 5,
+      animatedElementCount: 5,
+      stepCount: 3,
+      uiResourceUri: UI_RESOURCE_URI,
+      uiResourceAttached: true,
+    })
+    expect(openResult._meta).toMatchObject({
+      filename,
+      revision: 1,
+      uiResourceUri: UI_RESOURCE_URI,
+      projectSnapshot: document,
     })
     expect(byId.input.customData.sanverseAnimation).toMatchObject({
       version: 1,
@@ -229,5 +358,17 @@ describe('lean animation MCP', () => {
     await expect(
       createAnimationFile(outputDir, storyboard, '../escape.excalidraw'),
     ).rejects.toThrow(/filename/i)
+  })
+
+  it('rejects a storyboard with no drawable elements', async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), 'animation-mcp-empty-'))
+    cleanup.push(() => rm(outputDir, { recursive: true, force: true }))
+
+    await expect(
+      createAnimationFile(outputDir, {
+        projectName: 'Empty',
+        scenes: [{ sceneId: 'scene-1', title: 'Empty', elements: [] }],
+      }),
+    ).rejects.toThrow(/drawable element/i)
   })
 })
