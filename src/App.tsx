@@ -15,9 +15,7 @@ function App() {
       <div
         className={`editor-layer${presentationSnapshot ? ' editor-layer--presenting' : ''}`}
         aria-hidden={presentationSnapshot ? true : undefined}
-        // React 18 renders inert={false} as a present (thus active) attribute;
-        // only set it while presenting.
-        {...(presentationSnapshot ? { inert: '' } : {})}
+        inert={presentationSnapshot ? true : undefined}
       >
         <Editor
           controllerPlacement={controllerPlacement}

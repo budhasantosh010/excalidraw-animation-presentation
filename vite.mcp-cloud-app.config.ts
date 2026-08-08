@@ -3,7 +3,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  base: './',
+  base: '/mcp-app-assets/',
   publicDir: false,
   plugins: [react()],
   resolve: {
@@ -17,11 +17,19 @@ export default defineConfig({
   build: {
     assetsInlineLimit: 4096,
     cssCodeSplit: false,
-    manifest: true,
-    outDir: 'dist-mcp-app',
+    manifest: false,
+    outDir: 'public/mcp-app-assets',
     emptyOutDir: true,
     rollupOptions: {
       input: resolve(import.meta.dirname, 'mcp-app.html'),
+      output: {
+        entryFileNames: 'animation-studio.js',
+        chunkFileNames: 'chunks/[name]-[hash].js',
+        assetFileNames: (assetInfo) =>
+          assetInfo.names.some((name) => name.endsWith('.css'))
+            ? 'animation-studio.css'
+            : 'assets/[name]-[hash][extname]',
+      },
     },
   },
 })

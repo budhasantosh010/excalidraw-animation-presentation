@@ -10,10 +10,24 @@ Requires Git and Node.js 20.19 or newer. Clone the repository, install the exact
 git clone git@github.com:budhasantosh010/excalidraw-animation-presentation.git
 cd excalidraw-animation-presentation
 npm ci
-npm run dev
+npm run standalone:dev
 ```
 
 If SSH is not configured on the new laptop, clone with `https://github.com/budhasantosh010/excalidraw-animation-presentation.git` instead. Open the local URL printed by Vite (normally `http://localhost:5173`). No API key is required for the editor, presentations, image upload, or Iconify search.
+
+## Cloud Sites branch
+
+The `codex/cloud-sites-hosting` branch is the isolated ChatGPT Sites version. It keeps the editor and presentation experience, adds a Cloudflare R2-backed remote MCP server, and leaves the original `main` branch unchanged.
+
+```powershell
+npm ci
+npm run dev
+npm run build
+```
+
+The public editor is served at the Sites URL. The MCP endpoint is intentionally separate and protected at `/mcp/<ANIMATION_MCP_SECRET>/`; set `ANIMATION_MCP_SECRET` as a Sites runtime environment variable and use the resulting private URL as the ChatGPT custom-connector URL. Animation JSON files created through MCP are stored in the `ANIMATIONS` R2 bucket and persist across requests and deployments.
+
+Background removal remains available in the local standalone build. It is disabled in the hosted build so the AGPL background-removal package is not shipped or executed by the public service. Drawing, sequencing, presenting, saving/opening, image upload, and Iconify remain available online.
 
 ## 60-second workflow
 
@@ -53,7 +67,10 @@ Excalidraw is MIT-licensed. `@imgly/background-removal` 1.7.0 is distributed und
 
 ```powershell
 npm run test -- --run
+npm run mcp:test
+npm run mcp:check
 npm run lint
 npx tsc -b --pretty false
 npm run build
+node --test tests/rendered-html.test.mjs
 ```
