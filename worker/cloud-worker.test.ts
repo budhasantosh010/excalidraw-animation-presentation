@@ -59,9 +59,9 @@ describe('Sites cloud worker routing', () => {
         }),
     })
 
-    for (const path of [
-      '/mcp-app-assets/animation-studio.js',
-      '/mcp-app-assets/animation-studio.css',
+    for (const [path, sourcePath] of [
+      ['/mcp-app/animation-studio.js', '/mcp-app-assets/animation-studio.js'],
+      ['/mcp-app/animation-studio.css', '/mcp-app-assets/animation-studio.css'],
     ]) {
       const response = await assetWorker.fetch(
         new Request(`https://animation.example.com${path}`),
@@ -73,6 +73,7 @@ describe('Sites cloud worker routing', () => {
       expect(response.headers.get('cross-origin-resource-policy')).toBe(
         'cross-origin',
       )
+      await expect(response.text()).resolves.toBe(sourcePath)
     }
   })
 

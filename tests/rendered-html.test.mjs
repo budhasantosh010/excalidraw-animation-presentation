@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { access, readFile } from 'node:fs/promises'
+import { access, readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 
 const environment = {
@@ -26,7 +26,9 @@ const environment = {
         const body = await readFile(asset)
         const contentType = pathname.endsWith('.css')
           ? 'text/css'
-          : 'text/javascript'
+          : pathname.endsWith('.woff2')
+            ? 'font/woff2'
+            : 'text/javascript'
         return new Response(body, { headers: { 'content-type': contentType } })
       } catch {
         return new Response('Not found', { status: 404 })
@@ -83,6 +85,21 @@ test('packages the ChatGPT MCP App assets with the hosted build', async () => {
     access(new URL('../dist/client/mcp-app-assets/animation-studio.js', import.meta.url)),
     access(new URL('../dist/client/mcp-app-assets/animation-studio.css', import.meta.url)),
   ])
+
+  const [javascript, stylesheet] = await Promise.all([
+    readFile(
+      new URL('../dist/client/mcp-app-assets/animation-studio.js', import.meta.url),
+      'utf8',
+    ),
+    readFile(
+      new URL('../dist/client/mcp-app-assets/animation-studio.css', import.meta.url),
+      'utf8',
+    ),
+  ])
+  assert.match(javascript, /\/mcp-app\//)
+  assert.doesNotMatch(javascript, /\/mcp-app-assets\//)
+  assert.match(stylesheet, /\/mcp-app\//)
+  assert.doesNotMatch(stylesheet, /\/mcp-app-assets\//)
 })
 
 test('worker build exposes public health', async () => {
@@ -103,9 +120,17 @@ test('worker build exposes public health', async () => {
 
 test('worker build serves cross-origin MCP App assets', async () => {
   const worker = await loadWorker()
+  const [chunkName] = await readdir(
+    new URL('../dist/client/mcp-app-assets/chunks/', import.meta.url),
+  )
+  const [fontName] = await readdir(
+    new URL('../dist/client/mcp-app-assets/assets/', import.meta.url),
+  )
   for (const [path, contentType] of [
-    ['/mcp-app-assets/animation-studio.js', 'text/javascript'],
-    ['/mcp-app-assets/animation-studio.css', 'text/css'],
+    ['/mcp-app/animation-studio.js', 'text/javascript'],
+    ['/mcp-app/animation-studio.css', 'text/css'],
+    [`/mcp-app/chunks/${chunkName}`, 'text/javascript'],
+    [`/mcp-app/assets/${fontName}`, 'font/woff2'],
   ]) {
     const response = await worker.fetch(
       new Request(`https://animation.example.com${path}`),

@@ -73,8 +73,14 @@ export const createCloudWorker = ({
       }
     }
 
-    if (url.pathname.startsWith('/mcp-app-assets/')) {
-      const response = await fallbackFetch(request, env, context)
+    if (url.pathname.startsWith('/mcp-app/')) {
+      const assetUrl = new URL(request.url)
+      assetUrl.pathname = url.pathname.replace(
+        '/mcp-app/',
+        '/mcp-app-assets/',
+      )
+      const assetRequest = new Request(assetUrl, request)
+      const response = await fallbackFetch(assetRequest, env, context)
       const headers = new Headers(response.headers)
       headers.set('Access-Control-Allow-Origin', '*')
       headers.set('Cross-Origin-Resource-Policy', 'cross-origin')

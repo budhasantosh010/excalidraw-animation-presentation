@@ -65,7 +65,7 @@ const bootstrapHtml = (publicOrigin: string) => `<!doctype html>
         }
       }, 15000);
     </script>
-    <link rel="stylesheet" href="${publicOrigin}/mcp-app-assets/animation-studio.css" onerror="window.__SANVERSE_ASSET_FAILURE__()">
+    <link rel="stylesheet" href="${publicOrigin}/mcp-app/animation-studio.css" onerror="window.__SANVERSE_ASSET_FAILURE__()">
   </head>
   <body>
     <div id="root">
@@ -78,7 +78,7 @@ const bootstrapHtml = (publicOrigin: string) => `<!doctype html>
       <h1>Animation Studio failed to load</h1>
       <p>The production asset bundle could not be loaded. Refresh the ChatGPT app after the MCP server is healthy.</p>
     </aside>
-    <script type="module" src="${publicOrigin}/mcp-app-assets/animation-studio.js" onerror="window.__SANVERSE_ASSET_FAILURE__()"></script>
+    <script type="module" src="${publicOrigin}/mcp-app/animation-studio.js" onerror="window.__SANVERSE_ASSET_FAILURE__()"></script>
   </body>
 </html>`
 

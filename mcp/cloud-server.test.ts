@@ -123,8 +123,8 @@ describe('cloud animation MCP', () => {
       },
     })
     const html = 'text' in content ? content.text : ''
-    expect(html).toContain(`${PUBLIC_ORIGIN}/mcp-app-assets/animation-studio.js`)
-    expect(html).toContain(`${PUBLIC_ORIGIN}/mcp-app-assets/animation-studio.css`)
+    expect(html).toContain(`${PUBLIC_ORIGIN}/mcp-app/animation-studio.js`)
+    expect(html).toContain(`${PUBLIC_ORIGIN}/mcp-app/animation-studio.css`)
 
     const created = await client.callTool({
       name: 'create_animation',
