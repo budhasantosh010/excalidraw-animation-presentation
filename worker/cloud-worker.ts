@@ -84,6 +84,9 @@ export const createCloudWorker = ({
       const headers = new Headers(response.headers)
       headers.set('Access-Control-Allow-Origin', '*')
       headers.set('Cross-Origin-Resource-Policy', 'cross-origin')
+      if (url.pathname.endsWith('.woff2')) {
+        headers.set('Content-Type', 'font/woff2')
+      }
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,

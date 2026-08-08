@@ -27,7 +27,7 @@ const environment = {
         const contentType = pathname.endsWith('.css')
           ? 'text/css'
           : pathname.endsWith('.woff2')
-            ? 'font/woff2'
+            ? 'application/octet-stream'
             : 'text/javascript'
         return new Response(body, { headers: { 'content-type': contentType } })
       } catch {
