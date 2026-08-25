@@ -76,6 +76,36 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Tried/result: Non-missing I/O failures now preserve their cause inside `AssetStorageError`; integrity errors remain distinct.
 - Solution: Wrap final-path I/O failures consistently while preserving explicit integrity errors.
 
+### Unchanged autosave could leave stale durable autosave state
+
+- What: After a newer manual revision, an identical autosave could skip revision creation while leaving `autosave_state` on the older revision.
+- Where: `mcp/services/autosave-service.ts`, unchanged-content path.
+- When/how: Reproduced with autosave revision 2, manual revision 3, then identical content at revision 3.
+- Why: No-op detection returned before reconciling the durable autosave marker.
+- Impact: Recovery comparison could falsely treat current durable content as stale.
+- Tried/result: The unchanged path now upserts the exact current revision/hash/snapshot/time without creating revision 4.
+- Solution: Reconcile autosave metadata transactionally even when content needs no new revision.
+
+### Reordered identical asset hashes caused a false autosave failure
+
+- What: Asset membership validation treated hashes as a set, but persistence forwarded caller order to an order-sensitive repository guard.
+- Where: `mcp/services/autosave-service.ts`.
+- When/how: Reproduced by reversing the same two stored asset hashes.
+- Why: Validation and persistence used different canonical ordering rules.
+- Impact: A valid autosave could be rejected despite unchanged asset membership.
+- Tried/result: Accepted membership now reuses durable canonical ordering; the reorder regression passes.
+- Solution: Persist the current canonical asset order whenever membership is unchanged.
+
+### Async diagnostic callbacks could reject unhandled
+
+- What: An async `onError` or `onConflict` callback could return a rejected promise outside synchronous `try/catch`.
+- Where: `mcp/services/autosave-service.ts`, diagnostic isolation helper.
+- When/how: Reproduced with a real rejecting async `onError` callback.
+- Why: The callback contract allowed async functions but ignored returned thenables.
+- Impact: A diagnostic hook could create an unhandled rejection after autosave handled the primary failure.
+- Tried/result: Returned promises/thenables now have rejection handlers attached without being awaited; the regression passes.
+- Solution: Consume diagnostic thenable rejections while keeping diagnostics nonblocking.
+
 ## Environment and test-runner failures
 
 ### Sandboxed Vitest/Vite process spawn failed
