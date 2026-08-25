@@ -160,12 +160,50 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Tried/result: Production timestamp generation and deterministic tests pass.
 - Solution: Validate injected timestamps with the shared canonical ISO rule when services are wired.
 
+### Failed thumbnail revisions cannot retry in one scheduler instance
+
+- What: The coalescing scheduler records the latest revision before rendering, so rescheduling the same revision after renderer failure is ignored.
+- Where: `mcp/services/thumbnail-scheduler.ts`.
+- When/how: Only when thumbnail rendering fails and the same revision is retried without restarting the scheduler.
+- Why: Coalescing currently prioritizes preventing obsolete work over retry state.
+- Impact: The durable project is safe, but its thumbnail may remain stale until a newer revision or app restart.
+- Tried/result: Rendering failures are isolated and never roll back project work; retry policy was not expanded in this slice.
+- Solution: Track successful and failed revision state separately when the concrete thumbnail renderer is wired.
+
+### Thumbnail scheduler retains one revision marker per project
+
+- What: `latestRevision` keeps a small entry for every project encountered during the scheduler lifetime.
+- Where: `mcp/services/thumbnail-scheduler.ts`.
+- When/how: Accumulates during a very long-running process that touches many projects.
+- Why: The map prevents older jobs from replacing newer work.
+- Impact: Small unbounded metadata growth, not project-data loss.
+- Tried/result: No eviction policy was added without observed scale evidence.
+- Solution: Evict idle project markers after a bounded retention period when measured usage warrants it.
+
+### Project move preserves its prior updated timestamp
+
+- What: Moving a project between workspaces does not change `projects.updated_at`.
+- Where: `mcp/services/project-file-service.ts`.
+- When/how: Every successful move operation.
+- Why: The timestamp currently represents content revision time rather than filing/location changes.
+- Impact: Recent-project ordering will not treat a move as a content edit.
+- Tried/result: Snapshot, revisions, assets, and timestamps remain otherwise exact.
+- Solution: Keep this behavior if `updatedAt` means content time; otherwise add a separate metadata-change timestamp.
+
 ## Intentional current limitation
 
 ### Revision asset membership cannot change yet
 
 - What: Project creation can link pre-existing assets, but update rejects changing the asset-hash set.
 - Where: `mcp/persistence/project-repository.ts`.
-- Why: Safe revision-scoped binary asset storage is Micro 1.3 and must not be improvised in repository CRUD.
+- Why: Micro 1.3 added safe binary storage, but the current schema still links assets at project level rather than per immutable revision.
 - Impact: Image/file membership edits wait for the next persistence slice; existing references are never silently lost.
-- Solution: Implement content-addressed, revision-compatible asset storage in Micro 1.3.
+- Solution: Add revision-scoped asset links in a versioned migration before revision restore/export is completed.
+
+### Existing create/update paths do not schedule thumbnails yet
+
+- What: The scheduler is integrated with duplication but not with every existing create/update call site.
+- Where: Persistence service integration boundary.
+- Why: Wiring the existing UI/MCP save paths belongs to Micro 1.7 and would broaden this backend-only slice.
+- Impact: New or edited projects may not receive thumbnails until workspace UI integration; durable saves are unaffected.
+- Solution: Inject the scheduler after successful create/update commits during Micro 1.7.

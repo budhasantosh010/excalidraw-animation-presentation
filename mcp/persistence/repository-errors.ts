@@ -26,6 +26,13 @@ export class PersistenceAssetReferenceError extends Error {
   }
 }
 
+export class PersistenceConfirmationError extends PersistenceConflictError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
+    this.name = 'PersistenceConfirmationError'
+  }
+}
+
 export const isSqliteUniqueConstraintError = (error: unknown) =>
   typeof error === 'object' &&
   error !== null &&
