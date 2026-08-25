@@ -46,6 +46,36 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Tried/result: Added fail-closed checks before construction and inside the immediate transaction; the no-extra-revision regression passes.
 - Solution: Require restore before any new revision can be written.
 
+### Concurrent asset cleanup could delete another store's file
+
+- What: After a database-registration race, one asset store could remove the shared final content-addressed file created or registered by another store.
+- Where: `mcp/persistence/asset-store.ts`, database-failure cleanup.
+- When/how: Reproduced with two independent stores writing identical bytes to the same database and asset root.
+- Why: Final-file ownership cannot be proven after a concurrent registration failure.
+- Impact: A valid asset database row could be left without its durable file.
+- Tried/result: Final files are now retained as recoverable orphans; retries validate and adopt them, and concurrent/dedup tests pass.
+- Solution: Delete only uniquely owned temporary files and never delete the shared final hash path after registration failure.
+
+### Oversized asset input was copied before rejection
+
+- What: The store cloned a `Uint8Array` before checking its configured maximum size.
+- Where: `mcp/persistence/asset-store.ts`, input validation.
+- When/how: Reproduced with an oversized typed array whose iterator throws if copying begins.
+- Why: Defensive detachment occurred too early.
+- Impact: A rejected upload could temporarily double its memory use.
+- Tried/result: Size validation now precedes copying; the copy-bomb regression passes.
+- Solution: Check `byteLength` first and clone only accepted inputs.
+
+### Asset filesystem probe errors escaped untyped
+
+- What: A non-`ENOENT` read failure while probing a final asset path escaped as a raw filesystem error.
+- Where: `mcp/persistence/asset-store.ts`, pre-registration final-file probe.
+- When/how: Reproduced with an injected `EACCES` read error.
+- Why: The probe distinguished missing and corrupt files but did not normalize other I/O failures.
+- Impact: Callers could not handle all storage failures through the typed asset error contract.
+- Tried/result: Non-missing I/O failures now preserve their cause inside `AssetStorageError`; integrity errors remain distinct.
+- Solution: Wrap final-path I/O failures consistently while preserving explicit integrity errors.
+
 ## Environment and test-runner failures
 
 ### Sandboxed Vitest/Vite process spawn failed
