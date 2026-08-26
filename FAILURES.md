@@ -392,6 +392,36 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 
 ## Intentional current limitation
 
+### First bounded WebM export produced zero recorder bytes
+
+- What: A 320x180, 10 FPS, 300 ms browser export ended with `Video recorder produced an invalid result.`
+- Where: `src/exportMedia.ts`, canvas capture stream finalization.
+- When/how: First real Phase 3 browser test after PNG succeeded.
+- Why: The capture track was not explicitly prompted for frames and the recorder was stopped before a final data flush settled.
+- Impact: WebM was correctly rejected instead of presenting a corrupt download; source, PNG, and SVG paths were unaffected.
+- Tried/result: Added explicit canvas-track frame requests plus a bounded final `requestData` flush before stop; the same live retry downloaded a validated 1.9 KB WebM with no console errors.
+- Solution: Drive the capture track explicitly and wait for the final recorder data event before validating bytes.
+
+### In-app browser did not expose the successful object-URL download event
+
+- What: Browser automation timed out waiting for the download event while the application completed `Downloaded 52.0 KB PNG` with no console errors.
+- Where: Phase 3 real-browser verification of `downloadExport`.
+- When/how: Clicking Download for a local object-URL PNG.
+- Why: The in-app browser harness did not surface this object-URL download through its event bridge.
+- Impact: The app result is valid, but the harness cannot independently inspect the downloaded file path in this run.
+- Tried/result: Read the application status and browser console after the timeout; export succeeded and no errors were logged.
+- Solution: Treat the validated blob size/MIME plus app status as evidence, or inspect the download manually when needed.
+
+### Export panel SSR test loaded Excalidraw's JSON dependency eagerly
+
+- What: The first `ExportPanel` test failed before collecting tests because Node required an import attribute for `open-color.json`.
+- Where: `src/ExportPanel.tsx` importing `src/exportMedia.ts`, which imports the browser-only Excalidraw export runtime.
+- When/how: Phase 3 server-rendered component test under Vitest's Node environment.
+- Why: The browser export runtime was imported eagerly even when only rendering controls.
+- Impact: Test-only blocker and unnecessary initial UI bundle work; production export code was not executed.
+- Tried/result: Converted the browser export implementation to an on-demand dynamic import inside the Download action.
+- Solution: Keep browser-only media exporters lazy and keep the panel's static render dependency-free.
+
 ### Camera zoom uses Excalidraw's branded numeric type
 
 - What: TypeScript rejected a validated numeric camera zoom as `NormalizedZoomValue`.

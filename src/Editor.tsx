@@ -42,6 +42,8 @@ import {
 } from './DraggableControllerBar'
 import type { ControllerPlacement } from './controllerPosition'
 import { TimelinePanel } from './TimelinePanel'
+import { ExportPanel } from './ExportPanel'
+import type { ExportRange } from './exportModel'
 
 export type EditorSnapshot = {
   elements: readonly ExcalidrawElement[]
@@ -106,6 +108,7 @@ export function Editor({
   const [fileStatus, setFileStatus] = useState('')
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [timelineOpen, setTimelineOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [assetBusy, setAssetBusy] = useState(false)
   const [iconQuery, setIconQuery] = useState('')
   const [icons, setIcons] = useState<IconifyResult[]>([])
@@ -298,6 +301,43 @@ export function Editor({
       files: { ...currentFiles },
       frameId: activeFrame?.id ?? null,
     })
+  }
+
+  const getExportSnapshot = (range: ExportRange) => {
+    const currentElements = api?.getSceneElements() ?? latestElements.current
+    const currentAppState = api?.getAppState() ?? latestAppState.current
+    let includedIds: Set<string> | undefined
+    if (range === 'selection' && selectedIds.length) {
+      includedIds = getSelectionClosure(currentElements, selectedIds)
+    } else if (range === 'scene') {
+      const frame = currentElements.find(
+        (element) =>
+          !element.isDeleted &&
+          element.type === 'frame' &&
+          selectedIds.includes(element.id),
+      ) ?? currentElements.find(
+        (element) => !element.isDeleted && element.type === 'frame',
+      )
+      if (frame) {
+        includedIds = getSelectionClosure(
+          currentElements,
+          currentElements
+            .filter((element) => element.id === frame.id || element.frameId === frame.id)
+            .map((element) => element.id),
+        )
+      }
+    }
+    const elements = currentElements.filter(
+      (element) => !element.isDeleted && (!includedIds || includedIds.has(element.id)),
+    )
+    return {
+      elements,
+      appState: currentAppState,
+      files: filterReferencedFiles(
+        elements,
+        api?.getFiles() ?? latestFiles.current,
+      ),
+    }
   }
 
   const handleAddFrame = () => {
@@ -680,6 +720,13 @@ export function Editor({
         />
       ) : null}
 
+      {exportOpen ? (
+        <ExportPanel
+          getSnapshot={getExportSnapshot}
+          onClose={() => setExportOpen(false)}
+        />
+      ) : null}
+
       <DraggableControllerBar
         className="animation-toolbar"
         ariaLabel="Animation controls"
@@ -756,6 +803,13 @@ export function Editor({
         </button>
         <button type="button" onClick={handleSave}>
           Save
+        </button>
+        <button
+          type="button"
+          aria-pressed={exportOpen}
+          onClick={() => setExportOpen((value) => !value)}
+        >
+          Export
         </button>
         <button type="button" onClick={() => fileInput.current?.click()}>
           Open
