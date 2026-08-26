@@ -1,5 +1,4 @@
 import { getElementAnimation } from '../../src/animation.ts'
-import type { ExcalidrawDocument } from '../animation-tools.ts'
 
 declare const persistenceIdBrand: unique symbol
 
@@ -53,8 +52,14 @@ export type ProjectRevision = {
   createdAt: string
 }
 
-export type CanonicalProjectSnapshot = ExcalidrawDocument &
-  Record<string, unknown>
+export type CanonicalProjectSnapshot = {
+  type: 'excalidraw'
+  version: 2
+  source: 'local'
+  elements: Array<Record<string, any>>
+  appState: Record<string, unknown>
+  files: Record<string, never>
+} & Record<string, unknown>
 
 export type PersistedProjectRecord = {
   schemaVersion: 1

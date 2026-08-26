@@ -1,10 +1,50 @@
 # Failure Log
 
-Updated: 2026-08-25
+Updated: 2026-08-26
 
 This is the single failure log for the Animated Excalidraw agency-workspace expansion. Secrets, private routes, and unrelated cloud-project details are intentionally excluded.
 
 ## Fixed release blockers
+
+### Recovery journal accepted a stale or future base revision
+
+- What: A browser recovery write could persist a candidate whose expected revision did not equal the durable project revision.
+- Where: `src/recovery/recoveryJournal.ts`, `write()`.
+- When/how: Reproduced by writing against durable revision 1 with expected revision 2.
+- Why: The expected revision was parsed but never compared with the durable revision.
+- Impact: Recovery could offer an invalid candidate based on history that never existed.
+- Tried/result: Exact optimistic-revision validation now runs before any storage mutation; the regression passes.
+- Solution: Reject every recovery write unless its expected revision exactly matches the supplied durable record.
+
+### Recovery acknowledgement could erase a newer browser-context edit
+
+- What: Acknowledging one journal could delete a different journal written between assessment and removal.
+- Where: `src/recovery/recoveryJournal.ts`, `acknowledge()` and `remove()`.
+- When/how: Reproduced by replacing the main journal from a second simulated browser context during acknowledgement.
+- Why: The old flow performed multiple reads followed by an unconditional shared-key deletion.
+- Impact: A newer unsaved edit could be silently lost.
+- Tried/result: Exact-identity acknowledgement tombstones replaced physical deletion; the concurrent-write regression passes.
+- Solution: Acknowledge only the observed identity and keep differently identified journals visible.
+
+### Fingerprint equality alone marked recovery content durable
+
+- What: Matching noncryptographic fingerprints were treated as proof that journal and durable content were identical.
+- Where: `src/recovery/recoveryJournal.ts`, recovery assessment.
+- When/how: Found during the recovery-journal quality review.
+- Why: The fingerprint comparison had no canonical-content confirmation.
+- Impact: A rare hash collision could suppress a legitimate recovery offer.
+- Tried/result: Fingerprints are now only a precheck followed by exact canonical content comparison; focused tests pass.
+- Solution: Require both fingerprint equality and exact canonical snapshot, extension, and asset-hash equality.
+
+### Browser recovery code pulled Node-only dependencies into the app build
+
+- What: The production TypeScript build followed a Node filesystem import in the recovery test and a Node-only MCP type dependency from the shared persistence contract.
+- Where: `src/recovery/recoveryJournal.test.ts` and `mcp/persistence/contracts.ts`.
+- When/how: Detected by the required production build after the first focused recovery test passed.
+- Why: Browser-scoped code crossed the browser/server runtime boundary through imports.
+- Impact: The standalone application could not pass its production type build.
+- Tried/result: Fixtures now use static JSON imports and the shared contract declares its browser-safe structural snapshot type locally; the production build passes.
+- Solution: Keep shared persistence contracts runtime-neutral and keep Node APIs out of browser-owned source files.
 
 ### Current-version database could be structurally empty
 
@@ -107,6 +147,16 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Solution: Consume diagnostic thenable rejections while keeping diagnostics nonblocking.
 
 ## Environment and test-runner failures
+
+### Recovery-journal review subagent reached its usage limit
+
+- What: The delegated recovery-journal implementation task stopped before producing files.
+- Where: The `p1_recovery_journal` subagent execution environment.
+- When/how: It occurred immediately after dispatch when the agent reported its account usage limit.
+- Why: The delegated model had no remaining usage allowance.
+- Impact: Delegation stopped, but no repository files were modified or corrupted.
+- Tried/result: The primary agent resumed the bounded task locally and completed the focused tests.
+- Solution: Continue locally or retry delegation after the usage allowance resets; never block product work on the delegate.
 
 ### Sandboxed Vitest/Vite process spawn failed
 
