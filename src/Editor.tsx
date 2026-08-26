@@ -41,6 +41,7 @@ import {
   DraggableControllerBar,
 } from './DraggableControllerBar'
 import type { ControllerPlacement } from './controllerPosition'
+import { TimelinePanel } from './TimelinePanel'
 
 export type EditorSnapshot = {
   elements: readonly ExcalidrawElement[]
@@ -104,6 +105,7 @@ export function Editor({
   })
   const [fileStatus, setFileStatus] = useState('')
   const [assetsOpen, setAssetsOpen] = useState(false)
+  const [timelineOpen, setTimelineOpen] = useState(false)
   const [assetBusy, setAssetBusy] = useState(false)
   const [iconQuery, setIconQuery] = useState('')
   const [icons, setIcons] = useState<IconifyResult[]>([])
@@ -230,6 +232,16 @@ export function Editor({
   const handleClear = () => {
     if (!selectedIds.length) return
     applyElements(clearStep(latestElements.current, selectedIds))
+  }
+
+  const handleTimelineSelect = (elementId: string) => {
+    setSelectedIds([elementId])
+    api?.updateScene({
+      appState: {
+        selectedElementIds: { [elementId]: true },
+        selectedGroupIds: {},
+      },
+    })
   }
 
   const handlePresent = () => {
@@ -592,7 +604,7 @@ export function Editor({
         >
           Assets {assetsOpen ? '−' : '+'}
         </button>
-        {assetsOpen ? (
+      {assetsOpen ? (
           <div className="assets-content">
             <button
               type="button"
@@ -657,6 +669,15 @@ export function Editor({
           </div>
         ) : null}
         </aside>
+      ) : null}
+
+      {timelineOpen ? (
+        <TimelinePanel
+          elements={liveElements}
+          selectedIds={selectedIds}
+          onChange={applyElements}
+          onSelect={handleTimelineSelect}
+        />
       ) : null}
 
       <DraggableControllerBar
@@ -725,6 +746,13 @@ export function Editor({
 
         <button type="button" onClick={handleAddFrame}>
           Add 16:9 frame
+        </button>
+        <button
+          type="button"
+          aria-pressed={timelineOpen}
+          onClick={() => setTimelineOpen((value) => !value)}
+        >
+          Timeline
         </button>
         <button type="button" onClick={handleSave}>
           Save

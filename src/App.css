@@ -549,6 +549,187 @@ select {
   background: #5753c9;
 }
 
+.timeline-panel {
+  position: absolute;
+  z-index: 9;
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  display: grid;
+  min-height: 248px;
+  max-height: min(42vh, 390px);
+  grid-template: auto minmax(126px, 1fr) / minmax(0, 1fr) 270px;
+  overflow: hidden;
+  border: 1px solid rgb(30 31 36 / 14%);
+  border-radius: 18px;
+  background: #17181d;
+  box-shadow: 0 22px 70px rgb(16 17 23 / 34%);
+  color: #f7f6ff;
+}
+
+.timeline-header {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  background: #202127;
+}
+
+.timeline-header > div,
+.timeline-header label,
+.inspector-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.timeline-header span,
+.inspector-title span,
+.timeline-scenes span {
+  color: #aaa8b7;
+  font-size: 11px;
+}
+
+.timeline-header input { accent-color: #8e89ff; }
+
+.timeline-body {
+  min-width: 0;
+  overflow: auto;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 3%) 1px, transparent 1px) 0 0 / 80px 100%,
+    #17181d;
+}
+
+.timeline-tracks {
+  position: relative;
+  min-height: 100%;
+  padding: 28px 10px 12px;
+}
+
+.timeline-ruler {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 110px;
+  height: 26px;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+}
+
+.timeline-ruler span {
+  position: absolute;
+  top: 6px;
+  color: #7d7b89;
+  font: 10px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.timeline-track {
+  position: relative;
+  height: 34px;
+  border-bottom: 1px solid rgb(255 255 255 / 5%);
+}
+
+.timeline-track-name {
+  position: absolute;
+  left: 0;
+  width: 100px;
+  overflow: hidden;
+  color: #c7c5d1;
+  font: 11px/34px ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-clip {
+  position: absolute;
+  top: 5px;
+  display: flex;
+  height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 0 0 0 9px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 6px;
+  background: #4e4b9b;
+  color: white;
+  cursor: grab;
+  font-size: 10px;
+  font-weight: 750;
+  touch-action: none;
+}
+
+.timeline-clip--emphasis { background: #9a5b22; }
+.timeline-clip--exit { background: #8f3e58; }
+.timeline-clip.is-active { outline: 2px solid #b9b6ff; outline-offset: 1px; }
+.timeline-clip:active { cursor: grabbing; }
+
+.timeline-clip i {
+  width: 10px;
+  height: 100%;
+  border-left: 1px solid rgb(255 255 255 / 24%);
+  background: rgb(255 255 255 / 10%);
+  cursor: ew-resize;
+}
+
+.timeline-empty {
+  margin: 24px 110px;
+  color: #8c8998;
+  font-size: 12px;
+}
+
+.timeline-inspector {
+  overflow: auto;
+  padding: 12px;
+  border-left: 1px solid rgb(255 255 255 / 9%);
+  background: #202127;
+}
+
+.timeline-inspector > label,
+.timeline-inspector fieldset label {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: #aaa8b7;
+  font-size: 11px;
+}
+
+.timeline-inspector input,
+.timeline-inspector select {
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 7px;
+  background: #15161a;
+  color: #f7f6ff;
+}
+
+.timeline-inspector fieldset {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 8px;
+  margin: 12px 0 0;
+  padding: 8px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 9px;
+}
+
+.timeline-inspector fieldset label { grid-template-columns: 42px 1fr; }
+.timeline-inspector legend { padding: 0 5px; color: #bdbac9; font-size: 10px; }
+
+.timeline-scenes {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgb(255 255 255 / 9%);
+}
+
 .order-badges {
   position: absolute;
   z-index: 8;
@@ -873,5 +1054,22 @@ select {
   .assets-panel {
     top: 64px;
     right: 10px;
+  }
+
+  .timeline-panel {
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    max-height: 52vh;
+    grid-template: auto minmax(120px, 1fr) 150px / 1fr;
+  }
+
+  .timeline-header,
+  .timeline-body,
+  .timeline-inspector { grid-column: 1; }
+
+  .timeline-inspector {
+    border-top: 1px solid rgb(255 255 255 / 9%);
+    border-left: 0;
   }
 }

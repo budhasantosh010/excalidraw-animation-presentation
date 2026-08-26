@@ -228,6 +228,16 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 
 ## Environment and test-runner failures
 
+### Timeline test initially asserted degrees against Excalidraw radians
+
+- What: The first timeline interpolation test expected a 10-degree numeric angle instead of Excalidraw's radian value.
+- Where: `src/timeline.test.ts`, transform sampling assertion.
+- When/how: Detected on the first Phase 2 GREEN run after the five other timeline tests passed.
+- Why: The public inspector uses degrees, while the Excalidraw element contract stores radians.
+- Impact: Production interpolation was correct; only the test expectation was wrong.
+- Tried/result: The assertion now checks `Math.PI / 18`, preserving degree-based user input and radian-based canvas state.
+- Solution: Convert inspector degrees to radians only at the Excalidraw element boundary.
+
 ### Sandboxed Git staging could not create the index lock
 
 - What: The first scoped `git add` attempt failed with permission denied while creating `.git/index.lock`.
@@ -381,6 +391,16 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Solution: Keep this behavior if `updatedAt` means content time; otherwise add a separate metadata-change timestamp.
 
 ## Intentional current limitation
+
+### Camera zoom uses Excalidraw's branded numeric type
+
+- What: TypeScript rejected a validated numeric camera zoom as `NormalizedZoomValue`.
+- Where: `src/Presentation.tsx`, camera-track scene update.
+- When/how: The first Phase 2 typecheck after wiring sampled camera values into `updateScene`.
+- Why: Excalidraw brands the zoom number in its public type but exposes no normalization helper in the installed package.
+- Impact: Compile-only blocker; the 49 animation/timeline tests still passed and runtime behavior was not reached.
+- Tried/result: Searched the installed package declarations for a public normalization helper; none exists. The already-clamped value is now narrowed at the API boundary.
+- Solution: Keep numeric validation in `sampleSceneCamera` and isolate the branded cast at the Excalidraw call boundary.
 
 ### Existing create/update paths do not schedule thumbnails yet
 

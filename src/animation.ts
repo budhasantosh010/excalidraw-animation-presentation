@@ -1,7 +1,7 @@
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 
 export type SanverseAnimation = {
-  version: 1
+  version: 1 | 2
   sceneId: string
   step: number
   effect: 'auto' | 'appear' | 'fade' | 'pop' | 'draw'
@@ -76,7 +76,7 @@ export const getElementAnimation = (
     | undefined
 
   if (
-    candidate?.version !== 1 ||
+    candidate?.version !== 1 && candidate?.version !== 2 ||
     typeof candidate.sceneId !== 'string' ||
     typeof candidate.step !== 'number' ||
     !Number.isSafeInteger(candidate.step) ||
