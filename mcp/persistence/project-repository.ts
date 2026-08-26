@@ -184,15 +184,15 @@ export const createProjectRepository = (
       )
       .get(revisionNumber ?? null, projectId) as ProjectRevisionRow | undefined
 
-  const readAssetHashes = (projectId: ProjectId) =>
+  const readAssetHashes = (revisionId: string) =>
     (
       database
         .prepare(
-          `SELECT asset_hash FROM project_assets
-           WHERE project_id = ? ORDER BY asset_hash ASC`,
+          `SELECT asset_hash FROM revision_assets
+           WHERE revision_id = ? ORDER BY asset_hash ASC`,
         )
         .pluck()
-        .all(projectId) as string[]
+        .all(revisionId) as string[]
     ).map(parseAssetHash)
 
   const buildRecord = (row: ProjectRevisionRow): PersistedProjectRecord =>
@@ -209,7 +209,7 @@ export const createProjectRepository = (
         createdAt: row.revision_created_at,
       },
       trash: trashStateFromRow(row),
-      assetHashes: readAssetHashes(parseProjectId(row.project_id)),
+      assetHashes: readAssetHashes(row.revision_id),
       extension: JSON.parse(row.extension_json) as unknown,
       createdAt: row.project_created_at,
       updatedAt:
@@ -321,8 +321,12 @@ export const createProjectRepository = (
       const linkAsset = database.prepare(
         'INSERT INTO project_assets (project_id, asset_hash) VALUES (?, ?)',
       )
+      const linkRevisionAsset = database.prepare(
+        'INSERT INTO revision_assets (revision_id, asset_hash) VALUES (?, ?)',
+      )
       for (const hash of candidate.assetHashes) {
         linkAsset.run(candidate.projectId, hash)
+        linkRevisionAsset.run(candidate.revision.id, hash)
       }
     })
 
@@ -371,14 +375,6 @@ export const createProjectRepository = (
       snapshot: input.snapshot,
     })
 
-    if (
-      JSON.stringify(candidate.assetHashes) !== JSON.stringify(current.assetHashes)
-    ) {
-      throw new PersistenceAssetReferenceError(
-        'Changing project asset references is not supported until revision-scoped asset storage is available.',
-      )
-    }
-
     const transaction = database.transaction(() => {
       const durable = database
         .prepare(
@@ -407,6 +403,7 @@ export const createProjectRepository = (
           { cause: error },
         )
       }
+      ensureAssetsExist(candidate.assetHashes)
       database
         .prepare(
           `INSERT INTO revisions
@@ -423,6 +420,21 @@ export const createProjectRepository = (
           JSON.stringify(candidate.extension),
           candidate.revision.createdAt,
         )
+      const linkRevisionAsset = database.prepare(
+        'INSERT INTO revision_assets (revision_id, asset_hash) VALUES (?, ?)',
+      )
+      for (const hash of candidate.assetHashes) {
+        linkRevisionAsset.run(candidate.revision.id, hash)
+      }
+      database
+        .prepare('DELETE FROM project_assets WHERE project_id = ?')
+        .run(projectId)
+      const linkCurrentAsset = database.prepare(
+        'INSERT INTO project_assets (project_id, asset_hash) VALUES (?, ?)',
+      )
+      for (const hash of candidate.assetHashes) {
+        linkCurrentAsset.run(projectId, hash)
+      }
       const changed = database
         .prepare(
           `UPDATE projects

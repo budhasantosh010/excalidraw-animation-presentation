@@ -46,6 +46,26 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Tried/result: Fixtures now use static JSON imports and the shared contract declares its browser-safe structural snapshot type locally; the production build passes.
 - Solution: Keep shared persistence contracts runtime-neutral and keep Node APIs out of browser-owned source files.
 
+### Fresh databases created an unnecessary intermediate migration backup
+
+- What: A brand-new database was backed up between schema versions 1 and 2 during its first initialization.
+- Where: `mcp/persistence/database.ts`, migration loop.
+- When/how: Detected by the revision-asset migration regression on an empty new database path.
+- Why: Backup eligibility used the in-loop schema version instead of whether durable storage existed before startup.
+- Impact: First launch created a useless backup and violated the clean-initialization contract.
+- Tried/result: Backups now run only when the database existed before startup; existing databases still receive one backup before each pending migration.
+- Solution: Base backup eligibility on pre-open file existence, not versions created during the same initialization.
+
+### Project-level asset links could not preserve historical revisions
+
+- What: Every historical revision read the project’s current asset links, and writes could not change membership.
+- Where: Schema v1 and `mcp/persistence/project-repository.ts`.
+- When/how: Exposed when implementing safe revision restore and exact historical reads.
+- Why: Assets were linked only by project ID rather than immutable revision ID.
+- Impact: Restoring or exporting a historical image-bearing revision could use the wrong files.
+- Tried/result: Schema v2 adds validated revision-scoped links, migrates legacy links, and updates current links atomically; focused and MCP regressions pass.
+- Solution: Store and read asset membership by revision while retaining project links as the current-revision index.
+
 ### Current-version database could be structurally empty
 
 - What: A database could set the current `user_version` while lacking the migration ledger and application tables.
@@ -271,14 +291,6 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Solution: Keep this behavior if `updatedAt` means content time; otherwise add a separate metadata-change timestamp.
 
 ## Intentional current limitation
-
-### Revision asset membership cannot change yet
-
-- What: Project creation can link pre-existing assets, but update rejects changing the asset-hash set.
-- Where: `mcp/persistence/project-repository.ts`.
-- Why: Micro 1.3 added safe binary storage, but the current schema still links assets at project level rather than per immutable revision.
-- Impact: Image/file membership edits wait for the next persistence slice; existing references are never silently lost.
-- Solution: Add revision-scoped asset links in a versioned migration before revision restore/export is completed.
 
 ### Existing create/update paths do not schedule thumbnails yet
 

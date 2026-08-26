@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   CURRENT_SCHEMA_VERSION,
+  DEFAULT_PERSISTENCE_MIGRATIONS,
   PersistenceMigrationError,
   openPersistenceDatabase,
   type PersistenceMigration,
@@ -52,6 +53,7 @@ describe('persistence database migrations', () => {
       'autosave_state',
       'project_assets',
       'projects',
+      'revision_assets',
       'revisions',
       'schema_migrations',
       'trash',
@@ -70,11 +72,16 @@ describe('persistence database migrations', () => {
 
     const store = await openPersistenceDatabase({ databasePath })
 
-    expect(store.backups).toHaveLength(1)
+    expect(store.backups).toHaveLength(2)
     expect(store.backups[0]).toMatchObject({
       fromVersion: 0,
       toVersion: 1,
       path: `${databasePath}.pre-migration-v0-to-v1.backup.sqlite`,
+    })
+    expect(store.backups[1]).toMatchObject({
+      fromVersion: 1,
+      toVersion: 2,
+      path: `${databasePath}.pre-migration-v1-to-v2.backup.sqlite`,
     })
     const backup = new Database(store.backups[0]!.path, { readonly: true })
     expect(
@@ -83,6 +90,38 @@ describe('persistence database migrations', () => {
     expect(backup.pragma('user_version', { simple: true })).toBe(0)
     backup.close()
     store.close()
+  })
+
+  it('migrates legacy asset links to every existing revision without losing current links', async () => {
+    const databasePath = await createDatabasePath()
+    const legacy = await openPersistenceDatabase({
+      databasePath,
+      migrations: [DEFAULT_PERSISTENCE_MIGRATIONS[0]!],
+    })
+    const timestamp = '2026-08-25T00:00:00.000Z'
+    const workspaceId = 'ws_00000000000000000000000000000001'
+    const projectId = 'prj_00000000000000000000000000000001'
+    const revisionId = 'rev_00000000000000000000000000000001'
+    const assetHash = 'a'.repeat(64)
+    legacy.database.prepare('INSERT INTO workspaces (id, name, name_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(workspaceId, 'Studio', 'studio', timestamp, timestamp)
+    legacy.database.prepare('INSERT INTO projects (id, workspace_id, name, name_key, current_revision_number, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)').run(projectId, workspaceId, 'Board', 'board', timestamp, timestamp)
+    legacy.database.prepare('INSERT INTO revisions (id, project_id, revision_number, source, label, snapshot_json, extension_json, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)').run(revisionId, projectId, 'manual', null, '{}', '{}', timestamp)
+    legacy.database.prepare('INSERT INTO assets (hash, mime_type, byte_size, storage_path, created_at) VALUES (?, ?, ?, ?, ?)').run(assetHash, 'image/png', 1, 'assets/a', timestamp)
+    legacy.database.prepare('INSERT INTO project_assets (project_id, asset_hash) VALUES (?, ?)').run(projectId, assetHash)
+    legacy.close()
+
+    const migrated = await openPersistenceDatabase({ databasePath })
+
+    expect(migrated.backups).toHaveLength(1)
+    expect(migrated.database.prepare('SELECT revision_id, asset_hash FROM revision_assets').get()).toEqual({
+      revision_id: revisionId,
+      asset_hash: assetHash,
+    })
+    expect(migrated.database.prepare('SELECT project_id, asset_hash FROM project_assets').get()).toEqual({
+      project_id: projectId,
+      asset_hash: assetHash,
+    })
+    migrated.close()
   })
 
   it('does not create a redundant backup when the schema is already current', async () => {
@@ -137,6 +176,11 @@ describe('persistence database migrations', () => {
       database
         .prepare('INSERT INTO project_assets (project_id, asset_hash) VALUES (?, ?)')
         .run('prj_00000000000000000000000000000001', 'missing-hash'),
+    ).toThrow()
+    expect(() =>
+      database
+        .prepare('INSERT INTO revision_assets (revision_id, asset_hash) VALUES (?, ?)')
+        .run('rev_00000000000000000000000000000001', 'missing-hash'),
     ).toThrow()
 
     store.close()
@@ -277,7 +321,7 @@ describe('persistence database migrations', () => {
       .prepare(
         'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
       )
-      .run(2, 'unconfigured migration', '2026-08-25T00:00:00.000Z')
+      .run(CURRENT_SCHEMA_VERSION + 1, 'unconfigured migration', '2026-08-25T00:00:00.000Z')
     extra.close()
     await expect(
       openPersistenceDatabase({ databasePath: extraPath }),

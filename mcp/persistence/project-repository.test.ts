@@ -340,4 +340,53 @@ describe('project and revision repository', () => {
     expect(store.database.prepare('SELECT COUNT(*) FROM projects').pluck().get()).toBe(1)
     expect(store.database.prepare('SELECT COUNT(*) FROM revisions').pluck().get()).toBe(1)
   })
+
+  it('keeps exact asset membership per immutable revision and updates current links atomically', async () => {
+    const { repository, store, workspace } = await createTestContext()
+    const firstHash = 'a'.repeat(64) as AssetHash
+    const secondHash = 'b'.repeat(64) as AssetHash
+    const missingHash = 'c'.repeat(64) as AssetHash
+    const addAsset = store.database.prepare(
+      'INSERT INTO assets (hash, mime_type, byte_size, storage_path, created_at) VALUES (?, ?, ?, ?, ?)',
+    )
+    addAsset.run(firstHash, 'image/png', 10, 'assets/aa/first.png', '2026-08-25T00:00:00.000Z')
+    addAsset.run(secondHash, 'image/png', 20, 'assets/bb/second.png', '2026-08-25T00:00:00.000Z')
+    const created = repository.create({
+      workspaceId: workspace.id,
+      name: 'Revision assets',
+      source: 'manual',
+      snapshot: ordinaryFixture.snapshot,
+      extension: ordinaryFixture.extension,
+      assetHashes: [firstHash],
+    })
+
+    const updated = repository.update(created.projectId, {
+      expectedRevision: created.revision.number,
+      source: 'manual',
+      snapshot: connectedFixture.snapshot,
+      extension: connectedFixture.extension,
+      assetHashes: [secondHash],
+    })
+
+    expect(updated.assetHashes).toEqual([secondHash])
+    expect(repository.get(created.projectId, { revisionNumber: 1 }).assetHashes).toEqual([firstHash])
+    expect(repository.get(created.projectId, { revisionNumber: 2 }).assetHashes).toEqual([secondHash])
+    expect(
+      store.database.prepare('SELECT asset_hash FROM project_assets WHERE project_id = ? ORDER BY asset_hash').pluck().all(created.projectId),
+    ).toEqual([secondHash])
+    expect(
+      store.database.prepare('SELECT COUNT(*) FROM revision_assets WHERE revision_id IN (?, ?)').pluck().get(created.revision.id, updated.revision.id),
+    ).toBe(2)
+
+    expect(() =>
+      repository.update(created.projectId, {
+        expectedRevision: updated.revision.number,
+        source: 'manual',
+        snapshot: updated.snapshot,
+        extension: updated.extension,
+        assetHashes: [missingHash],
+      }),
+    ).toThrow(PersistenceAssetReferenceError)
+    expect(repository.get(created.projectId).revision.number).toBe(2)
+  })
 })

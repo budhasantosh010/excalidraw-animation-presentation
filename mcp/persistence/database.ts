@@ -105,6 +105,24 @@ const INITIAL_SCHEMA_SQL = `
   ) STRICT;
 `
 
+const REVISION_ASSETS_SCHEMA_SQL = `
+  CREATE TABLE revision_assets (
+    revision_id TEXT NOT NULL,
+    asset_hash TEXT NOT NULL,
+    PRIMARY KEY (revision_id, asset_hash),
+    FOREIGN KEY (revision_id) REFERENCES revisions(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY (asset_hash) REFERENCES assets(hash) ON UPDATE CASCADE ON DELETE RESTRICT
+  ) STRICT;
+
+  CREATE INDEX revision_assets_asset_idx
+    ON revision_assets (asset_hash, revision_id);
+
+  INSERT INTO revision_assets (revision_id, asset_hash)
+  SELECT r.id, pa.asset_hash
+  FROM revisions r
+  JOIN project_assets pa ON pa.project_id = r.project_id;
+`
+
 type RequiredSchemaObject = {
   type: 'index' | 'table'
   name: string
@@ -163,6 +181,51 @@ const validateInitialSchema = (database: Database.Database) => {
   }
 }
 
+const REVISION_ASSETS_REQUIRED_SCHEMA: readonly RequiredSchemaObject[] = (() => {
+  const expected = new Database(':memory:')
+  try {
+    expected.exec(INITIAL_SCHEMA_SQL)
+    expected.exec(REVISION_ASSETS_SCHEMA_SQL)
+    return expected
+      .prepare(
+        `SELECT type, name, sql
+         FROM sqlite_schema
+         WHERE name IN ('revision_assets', 'revision_assets_asset_idx')
+           AND sql IS NOT NULL
+         ORDER BY type, name`,
+      )
+      .all()
+      .map((row) => {
+        const schemaObject = row as RequiredSchemaObject
+        return {
+          type: schemaObject.type,
+          name: schemaObject.name,
+          sql: normalizeSchemaSql(schemaObject.sql),
+        }
+      })
+  } finally {
+    expected.close()
+  }
+})()
+
+const validateRevisionAssetsSchema = (database: Database.Database) => {
+  const readObject = database.prepare(
+    `SELECT sql FROM sqlite_schema
+     WHERE type = ? AND name = ? AND sql IS NOT NULL`,
+  )
+  const mismatches = REVISION_ASSETS_REQUIRED_SCHEMA.filter((expected) => {
+    const actual = readObject.get(expected.type, expected.name) as
+      | { sql: string }
+      | undefined
+    return !actual || normalizeSchemaSql(actual.sql) !== expected.sql
+  }).map(({ type, name }) => `${type} ${name}`)
+  if (mismatches.length > 0) {
+    throw new Error(
+      `Persistence revision-asset schema is missing or altered: ${mismatches.join(', ')}.`,
+    )
+  }
+}
+
 export const DEFAULT_PERSISTENCE_MIGRATIONS: readonly PersistenceMigration[] = [
   {
     version: 1,
@@ -171,6 +234,14 @@ export const DEFAULT_PERSISTENCE_MIGRATIONS: readonly PersistenceMigration[] = [
       database.exec(INITIAL_SCHEMA_SQL)
     },
     validate: validateInitialSchema,
+  },
+  {
+    version: 2,
+    name: 'revision scoped asset links',
+    apply(database) {
+      database.exec(REVISION_ASSETS_SCHEMA_SQL)
+    },
+    validate: validateRevisionAssetsSchema,
   },
 ]
 
@@ -376,7 +447,7 @@ export const openPersistenceDatabase = async ({
 
     for (const migration of migrations) {
       if (migration.version <= currentVersion) continue
-      if (databaseAlreadyExisted || currentVersion > 0) {
+      if (databaseAlreadyExisted) {
         backups.push(
           await createMigrationBackup(
             database,
