@@ -66,6 +66,16 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Tried/result: Schema v2 adds validated revision-scoped links, migrates legacy links, and updates current links atomically; focused and MCP regressions pass.
 - Solution: Store and read asset membership by revision while retaining project links as the current-revision index.
 
+### Read-only editor element types blocked mutable persistence regressions
+
+- What: Tightening the persisted snapshot element type to Excalidraw’s read-only element union broke tests that intentionally mutate detached copies.
+- Where: `mcp/persistence/contracts.ts` and recovery/contract regression tests.
+- When/how: Detected by both MCP and application TypeScript checks after adding revision preview summaries.
+- Why: The durable JSON contract is mutable plain data, while Excalidraw’s editor-facing type is read-only.
+- Impact: Typechecks failed even though runtime parsing and storage were correct.
+- Tried/result: The persistence contract remains a validated mutable JSON record, and the single animation-summary boundary uses an explicit checked type bridge; both typechecks pass.
+- Solution: Keep persistence DTOs mutable and apply editor-specific read-only types only at editor API boundaries.
+
 ### Current-version database could be structurally empty
 
 - What: A database could set the current `user_version` while lacking the migration ledger and application tables.

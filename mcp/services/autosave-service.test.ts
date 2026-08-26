@@ -209,7 +209,7 @@ describe('autosave service', () => {
     )
   })
 
-  it('detaches queued inputs and validates snapshot and asset membership immediately', async () => {
+  it('detaches queued inputs and validates snapshot and asset references immediately', async () => {
     const { store, projects, createProject } = await createContext()
     const project = createProject('Detached')
     const service = createAutosaveService({ database: store.database, projects })
@@ -224,12 +224,48 @@ describe('autosave service', () => {
     expect(() =>
       service.schedule({ ...edited(projects.get(project.projectId), 'bad'), snapshot: {} }),
     ).toThrow(/snapshot/i)
+    const assetHash = parseAssetHash('a'.repeat(64))
+    store.database.prepare(
+      `INSERT INTO assets (hash, mime_type, byte_size, storage_path, created_at)
+       VALUES (?, 'image/png', 1, ?, '2026-08-26T00:30:00.000Z')`,
+    ).run(assetHash, 'assets/aa/detached.png')
+    const current = projects.get(project.projectId)
+    service.schedule({
+      ...edited(current, 'asset change'),
+      assetHashes: [assetHash],
+    })
+    await service.flush()
+    expect(projects.get(project.projectId).assetHashes).toEqual([assetHash])
+    expect(projects.get(project.projectId, { revisionNumber: 2 }).assetHashes).toEqual([])
     expect(() =>
       service.schedule({
-        ...edited(projects.get(project.projectId), 'asset change'),
-        assetHashes: ['a'.repeat(64)],
+        ...edited(projects.get(project.projectId), 'missing asset'),
+        assetHashes: ['b'.repeat(64)],
       }),
     ).toThrow(PersistenceAssetReferenceError)
+  })
+
+  it('runs bounded retention after a saved autosave without risking the save', async () => {
+    const { store, projects, createProject } = await createContext()
+    const project = createProject('Retention')
+    const pruneAutosaves = vi.fn(() => {
+      throw new Error('retention unavailable')
+    })
+    const onError = vi.fn()
+    const service = createAutosaveService({
+      database: store.database,
+      projects,
+      revisionHistory: { pruneAutosaves },
+      onError,
+    })
+    service.schedule(edited(project, 'saved despite retention failure'))
+
+    const [outcome] = await service.flush()
+
+    expect(outcome).toMatchObject({ status: 'saved' })
+    expect(pruneAutosaves).toHaveBeenCalledWith(project.projectId)
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(projects.get(project.projectId).revision.number).toBe(2)
   })
 
   it('updates autosave_state consistently with the durable autosave revision', async () => {

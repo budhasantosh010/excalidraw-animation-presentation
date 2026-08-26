@@ -19,6 +19,7 @@ import {
   PersistenceConflictError,
 } from '../persistence/repository-errors.ts'
 import type { ThumbnailScheduler } from './thumbnail-scheduler.ts'
+import type { RevisionHistoryService } from './revision-history-service.ts'
 
 export type AutosaveInput = {
   projectId: unknown
@@ -124,21 +125,12 @@ export const computeAutosaveContentHash = ({
     )
     .digest('hex')
 
-const sameAssetMembership = (
-  first: readonly AssetHash[],
-  second: readonly AssetHash[],
-) => {
-  if (first.length !== second.length) return false
-  const firstSorted = [...first].sort()
-  const secondSorted = [...second].sort()
-  return firstSorted.every((hash, index) => hash === secondSorted[index])
-}
-
 export const createAutosaveService = ({
   database,
   projects,
   debounceMs = 750,
   thumbnailScheduler,
+  revisionHistory,
   onConflict = () => undefined,
   onError = () => undefined,
   setTimer = (callback, delay) => setTimeout(callback, delay),
@@ -148,6 +140,7 @@ export const createAutosaveService = ({
   projects: ProjectRepository
   debounceMs?: number
   thumbnailScheduler?: ThumbnailScheduler
+  revisionHistory?: Pick<RevisionHistoryService, 'pruneAutosaves'>
   onConflict?(
     error: AutosaveConflictError,
     pending: PendingAutosave,
@@ -197,17 +190,20 @@ export const createAutosaveService = ({
       extension: input.extension,
       assetHashes: input.assetHashes,
     })
-    if (!sameAssetMembership(candidate.assetHashes, current.assetHashes)) {
-      throw new PersistenceAssetReferenceError(
-        'Changing project asset references is not supported until revision-scoped asset storage is available.',
-      )
+    const findAsset = database.prepare('SELECT 1 FROM assets WHERE hash = ?')
+    for (const hash of candidate.assetHashes) {
+      if (!findAsset.get(hash)) {
+        throw new PersistenceAssetReferenceError(
+          `Asset ${hash} must exist before autosave can reference it.`,
+        )
+      }
     }
     const detached = {
       projectId,
       expectedRevision,
       snapshot: candidate.snapshot,
       extension: candidate.extension,
-      assetHashes: [...current.assetHashes],
+      assetHashes: [...candidate.assetHashes].sort(),
     }
     return {
       ...detached,
@@ -296,6 +292,11 @@ export const createAutosaveService = ({
             revisionNumber: outcome.project.revision.number,
             snapshot: outcome.project.snapshot,
           })
+        } catch (error) {
+          safelyReport(onError, error, input)
+        }
+        try {
+          revisionHistory?.pruneAutosaves(outcome.project.projectId)
         } catch (error) {
           safelyReport(onError, error, input)
         }
