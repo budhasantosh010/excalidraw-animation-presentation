@@ -76,6 +76,56 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Tried/result: The persistence contract remains a validated mutable JSON record, and the single animation-summary boundary uses an explicit checked type bridge; both typechecks pass.
 - Solution: Keep persistence DTOs mutable and apply editor-specific read-only types only at editor API boundaries.
 
+### Bare Express Router lacked response helpers inside Vite middleware
+
+- What: The first live `/api/bootstrap` request failed because `response.status` was unavailable.
+- Where: `mcp/workspace-api.ts` mounted through `vite.config.ts`.
+- When/how: Reproduced on the first real localhost request after the static checks passed.
+- Why: A standalone Express Router does not install the full Express request/response prototype layer when mounted directly into Vite Connect.
+- Impact: The workspace API returned Vite’s error page and the dashboard could not load; no durable data was written.
+- Tried/result: The same routes now run through a full Express application mounted as middleware; the live bootstrap succeeds.
+- Solution: Use the Express application adapter, not a bare Router, at the Vite Connect boundary.
+
+### Browser serialization replaced the canonical local source
+
+- What: Opening a valid project immediately failed recovery-journal validation with `Invalid project snapshot source; expected local`.
+- Where: Excalidraw browser serialization entering `src/WorkspaceShell.tsx`.
+- When/how: Reproduced consistently in the live editor after opening the two-step proof project.
+- Why: Excalidraw replaces the supplied export source with `window.location.origin` in browser builds.
+- Impact: Autosave and crash recovery could not accept otherwise valid editor changes.
+- Tried/result: A focused diagnostic exposed the exact nested cause; the boundary now normalizes only `source` back to the established `local` contract, with a regression test.
+- Solution: Normalize browser-export source at the persistence boundary while preserving the complete serialized document.
+
+### Opening a project created a revision without a user edit
+
+- What: A cold open of revision 3 immediately autosaved revision 4 even though the user changed nothing.
+- Where: `src/Editor.tsx` scene-change reporting during Excalidraw hydration.
+- When/how: Reproduced in the required browser cold-reopen test after drawing and saving a third element.
+- Why: The first hydrated scene normalized an empty `boundElements` value from `null` to `[]`, while the change key also treated selection and viewport movement as durable edits.
+- Impact: Version history accumulated false revisions and panning or selecting could trigger unnecessary writes.
+- Tried/result: The change key now starts from the loaded scene and tracks element versions, persisted app state, and file membership only; hydration, selection, and viewport changes are ignored.
+- Solution: Detect durable scene changes rather than transient editor-state or hydration normalization.
+
+### Late autosave response could replace a newly opened project
+
+- What: An autosave response could update the active project state after the user had already opened, duplicated, or switched to another project.
+- Where: `src/WorkspaceShell.tsx`, autosave completion handling.
+- When/how: Found during the bounded pre-commit concurrency review.
+- Why: The response unconditionally replaced `projectRef` without proving that its captured project record was still active.
+- Impact: Subsequent edits from the visible new canvas could be associated with the previously saved project.
+- Tried/result: Autosave still commits and acknowledges its journal, but updates visible state only when the exact captured project record remains active.
+- Solution: Bind asynchronous save results to the project state that initiated them and ignore stale UI results.
+
+### Autosave cleanup failure could disguise a successful commit
+
+- What: Revision retention cleanup could throw after the new revision committed and make the HTTP save appear failed.
+- Where: `mcp/workspace-api.ts`, save action after `projects.update()`.
+- When/how: Found during the bounded pre-commit failure-isolation review.
+- Why: Best-effort pruning ran in the request's success path without an isolation boundary.
+- Impact: The browser would retain its recovery journal and a retry could conflict with the already-committed revision.
+- Tried/result: Pruning failures are now logged and isolated while the committed revision is returned successfully.
+- Solution: Never let post-commit maintenance change the outcome reported for the durable save.
+
 ### Current-version database could be structurally empty
 
 - What: A database could set the current `user_version` while lacking the migration ledger and application tables.
@@ -177,6 +227,36 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Solution: Consume diagnostic thenable rejections while keeping diagnostics nonblocking.
 
 ## Environment and test-runner failures
+
+### Sandboxed Git staging could not create the index lock
+
+- What: The first scoped `git add` attempt failed with permission denied while creating `.git/index.lock`.
+- Where: The managed workspace sandbox's read-only `.git` boundary.
+- When/how: It occurred at the final local-commit gate after all verification passed.
+- Why: Product files are writable in the sandbox, but Git metadata requires approved local execution.
+- Impact: No files were staged or changed by the failed attempt.
+- Tried/result: The same exact scoped staging command is rerun with approved Git-metadata access.
+- Solution: Use approved local execution for Git metadata while keeping the explicit file allowlist.
+
+### PowerShell parsed an unquoted annotated-tag dereference
+
+- What: A final read-only `git rev-parse` check received an empty argument instead of the annotated-tag dereference suffix.
+- Where: The PowerShell verification command after the local commit.
+- When/how: PowerShell interpreted the unquoted `^{}` characters before Git received them.
+- Why: The Git revision expression was not passed as one literal argument.
+- Impact: Only that optional tag-peel check failed; the rollback tag and commit were unchanged.
+- Tried/result: The tag itself had already been listed successfully and remains preserved.
+- Solution: Quote Git revision expressions containing `^{}` in PowerShell.
+
+### Direct Node serialization diagnostic could not load Excalidraw
+
+- What: A temporary command-line probe failed before it could serialize an editor snapshot.
+- Where: A one-off `npx tsx -e` diagnostic importing the browser Excalidraw bundle.
+- When/how: It occurred while isolating the live recovery-journal validation failure.
+- Why: Excalidraw's browser runtime requires `window`, which is unavailable in a plain Node process.
+- Impact: Only that diagnostic path was unusable; no product code or durable data was changed.
+- Tried/result: Browser-side nested-cause instrumentation exposed the exact source-field mismatch instead.
+- Solution: Reproduce browser serialization in a browser-capable test or instrument the browser boundary, not raw Node.
 
 ### Recovery-journal review subagent reached its usage limit
 

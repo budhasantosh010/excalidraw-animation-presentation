@@ -49,6 +49,24 @@ export type EditorSnapshot = {
   frameId: string | null
 }
 
+const getPersistedSceneKey = (
+  elements: readonly ExcalidrawElement[],
+  appState: Partial<AppState>,
+  files: BinaryFiles,
+) => {
+  const persistedAppState = JSON.parse(
+    serializeProject([], appState, {} as BinaryFiles),
+  ) as { appState?: unknown }
+  return [
+    ...elements.map(
+      (element) =>
+        `${element.id}:${element.version}:${element.versionNonce}:${element.isDeleted ? 1 : 0}`,
+    ),
+    `appState=${JSON.stringify(persistedAppState.appState ?? {})}`,
+    `files=${Object.keys(files).sort().join(',')}`,
+  ].join('|')
+}
+
 type EditorProps = {
   controllerPlacement: ControllerPlacement
   onPresent: (snapshot: EditorSnapshot) => void
@@ -99,7 +117,15 @@ export function Editor({
   )
   const latestFiles = useRef<BinaryFiles>(initialSnapshot?.files ?? {})
   const sceneId = useRef(crypto.randomUUID())
-  const lastReportedScene = useRef('')
+  const lastReportedScene = useRef(
+    initialSnapshot
+      ? getPersistedSceneKey(
+          initialSnapshot.elements,
+          initialSnapshot.appState,
+          initialSnapshot.files,
+        )
+      : '',
+  )
 
   const sequence = useMemo(() => {
     const rows = new Map<
@@ -495,19 +521,7 @@ export function Editor({
           updateSelection(appState)
           setStepCount(getStepCount(elements))
           if (onSnapshotChange) {
-            const selectedIds = Object.keys(appState.selectedElementIds)
-              .filter((id) => appState.selectedElementIds[id])
-              .sort()
-              .join(',')
-            const sceneKey = [
-              ...elements.map(
-                (element) =>
-                  `${element.id}:${element.version}:${element.versionNonce}:${element.isDeleted ? 1 : 0}`,
-              ),
-              `selected=${selectedIds}`,
-              `viewport=${appState.scrollX},${appState.scrollY},${appState.zoom.value}`,
-              `files=${Object.keys(files).sort().join(',')}`,
-            ].join('|')
+            const sceneKey = getPersistedSceneKey(elements, appState, files)
             if (sceneKey !== lastReportedScene.current) {
               lastReportedScene.current = sceneKey
               const frameId =
