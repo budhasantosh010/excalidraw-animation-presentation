@@ -7,7 +7,7 @@ import {
   getElementAnimation,
   type AnimationFrameChanges,
   type SanverseAnimation,
-} from './animation'
+} from './animation.ts'
 
 export type TimelineEasing = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out'
 export type TimelinePhase = 'entrance' | 'emphasis' | 'exit'

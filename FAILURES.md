@@ -392,6 +392,26 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 
 ## Intentional current limitation
 
+### First Phase 4 MCP launch split the spaced PowerShell script path
+
+- What: The MCP diagnostic could not connect because the background PowerShell process exited before starting port 3002.
+- Where: The one-off verification `Start-Process` command, not the checked-in run script.
+- When/how: Final local Phase 4 readiness check from a repository path containing spaces.
+- Why: `Start-Process -ArgumentList` serialized the `-File` value without preserving the full quoted path.
+- Impact: No server or data change occurred; port 3002 remained free.
+- Tried/result: Logs identified the exact truncated path at `C:\Users\Lenovo\Music\Startups\YT`.
+- Solution: Pass one explicitly quoted PowerShell argument string when launching a script whose path contains spaces.
+
+### Shared timeline module failed the MCP NodeNext import rule
+
+- What: `npm run mcp:check` rejected `src/timeline.ts` because its relative animation import omitted a file extension.
+- Where: `src/timeline.ts` imported by the Phase 4 MCP revision engine.
+- When/how: First MCP typecheck after reusing the tested timeline normalization functions server-side.
+- Why: Vite accepts extensionless TypeScript imports; the MCP's NodeNext resolver requires an explicit extension.
+- Impact: Compiler-only blocker; the 17 MCP behavior tests passed.
+- Tried/result: Changed the one shared import to explicit `./animation.ts`, which both Vite and NodeNext support.
+- Solution: Use explicit `.ts` imports in frontend domain modules that are also consumed by the Node MCP.
+
 ### First bounded WebM export produced zero recorder bytes
 
 - What: A 320x180, 10 FPS, 300 ms browser export ended with `Video recorder produced an invalid result.`
