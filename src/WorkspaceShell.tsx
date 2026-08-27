@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { AppState, BinaryFiles } from '@excalidraw/excalidraw/types'
 
@@ -9,6 +10,11 @@ import { serializeProject } from './projectFile'
 import { createRecoveryJournal, type RecoveryJournalIdentity } from './recovery/recoveryJournal'
 import { useControllerPlacement } from './useControllerPlacement'
 import { parseWorkspaceSnapshot } from './workspaceSnapshot'
+import {
+  getEditorControllerLeftInset,
+  getWorkspaceSidebarWidth,
+} from './workspaceLayout'
+import { WorkspaceSidebar } from './WorkspaceSidebar'
 import {
   workspaceApi,
   type ProjectSummary,
@@ -46,6 +52,16 @@ const toProjectSnapshot = (
 
 export function WorkspaceShell() {
   const controllerPlacement = useControllerPlacement()
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    getWorkspaceSidebarWidth(window.innerWidth),
+  )
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem('sanverse-workspace-sidebar-collapsed-v1') === 'true'
+    } catch {
+      return false
+    }
+  })
   const [presentationSnapshot, setPresentationSnapshot] =
     useState<EditorSnapshot | null>(null)
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([])
@@ -71,6 +87,25 @@ export function WorkspaceShell() {
     () => createRecoveryJournal({ storage: window.localStorage }),
     [],
   )
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'sanverse-workspace-sidebar-collapsed-v1',
+        String(sidebarCollapsed),
+      )
+    } catch {
+      // The panel still works when storage is unavailable.
+    }
+  }, [sidebarCollapsed])
+
+  useEffect(() => {
+    const updateSidebarWidth = () => {
+      setSidebarWidth(getWorkspaceSidebarWidth(window.innerWidth))
+    }
+    window.addEventListener('resize', updateSidebarWidth)
+    return () => window.removeEventListener('resize', updateSidebarWidth)
+  }, [])
 
   const setCurrentProject = useCallback(
     (next: PersistedProjectRecord, remount = false) => {
@@ -313,8 +348,14 @@ export function WorkspaceShell() {
   }
 
   return (
-    <div className="workspace-shell">
-      <aside className="workspace-sidebar" aria-label="Project workspace">
+    <div
+      className={`workspace-shell${sidebarCollapsed ? ' workspace-shell--sidebar-collapsed' : ''}`}
+      style={{ '--workspace-sidebar-width': `${sidebarWidth}px` } as CSSProperties}
+    >
+      <WorkspaceSidebar
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
+      >
         <header>
           <div>
             <strong>Animation Studio</strong>
@@ -381,7 +422,7 @@ export function WorkspaceShell() {
           </div>
         ) : null}
         <output className="workspace-status">{status}</output>
-      </aside>
+      </WorkspaceSidebar>
 
       <main className="workspace-editor">
         {!project ? (
@@ -392,11 +433,15 @@ export function WorkspaceShell() {
           </div>
         ) : (
           <>
-            <div className="workspace-current-project">{project.name} · r{project.revision.number}</div>
             <div className={`editor-layer${presentationSnapshot ? ' editor-layer--presenting' : ''}`} aria-hidden={presentationSnapshot ? true : undefined} {...(presentationSnapshot ? { inert: '' } : {})}>
               <Editor
                 key={`${project.projectId}:${editorGeneration}`}
                 controllerPlacement={controllerPlacement}
+                controllerLeftInset={getEditorControllerLeftInset({
+                  presentationActive: presentationSnapshot !== null,
+                  sidebarCollapsed,
+                  sidebarWidth,
+                })}
                 initialSnapshot={editorSnapshot}
                 onSnapshotChange={handleSnapshotChange}
                 onPresent={setPresentationSnapshot}

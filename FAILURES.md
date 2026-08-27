@@ -392,6 +392,66 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 
 ## Intentional current limitation
 
+### First collapsible layout left narrow-window and presentation inset gaps
+
+- What: The first review found that a fixed 292px sidebar could push its collapse control out of a very narrow viewport, while the hidden editor could keep applying that sidebar inset during presentation.
+- Where: `src/App.css`, `src/WorkspaceShell.tsx`, and the shared controller placement used by `Editor` and `Presentation`.
+- When/how: Independent pre-commit review tested the consequences of responsive resizing and the editor remaining mounted while presentation is active.
+- Why: CSS used duplicated fixed widths, and the editor inset considered only sidebar collapse state rather than presentation state.
+- Impact: A narrow-window user could lose the collapse action, and presentation controls could be unnecessarily constrained away from the left side.
+- Tried/result: Added one viewport-safe width function, drove the CSS grid and collapse control through that measured width, released editor inset during presentation, passed 20 focused geometry/UI tests, and live-verified narrow collapse/reopen behavior.
+- Solution: Derive all sidebar geometry from the current viewport and force the hidden editor's controller inset to zero during presentation.
+
+### Root test discovery included the protected cloud-copy checkout
+
+- What: The unscoped root Vitest run collected `implementing in cloud/tests/rendered-html.test.mjs` and stopped before reporting the local suite result.
+- Where: Final regression verification for the workspace-overlay change.
+- When/how: `npm test -- --run` recursively discovered the intentionally untracked cloud-copy directory.
+- Why: The root Vitest configuration does not exclude that separate checkout.
+- Impact: No local application test failed and no source or project data changed; the unscoped command was not valid evidence.
+- Tried/result: Left the protected cloud folder untouched and ran the authoritative `src` and `mcp` suites explicitly; 34 files and 264 tests passed.
+- Solution: Keep local verification scoped to `src` and `mcp`, or exclude the separate cloud checkout in a future configuration-only change.
+
+### Workspace-overlay focused test hit the Windows child-process sandbox
+
+- What: Vite stopped with `spawn EPERM` before collecting the new Sequence-panel test.
+- Where: The first focused verification command in the managed workspace sandbox.
+- When/how: Vite attempted its normal Windows helper process while loading configuration.
+- Why: The sandbox denied Node child-process creation; the application module had not run.
+- Impact: Verification delay only; no code or data changed.
+- Tried/result: Re-ran the same scoped test outside the child-process restriction, observed the expected missing-component RED failure, then passed both new tests after implementation.
+- Solution: Re-run the identical approved Vite/Vitest command outside the sandbox before classifying `spawn EPERM` as an application failure.
+
+### Collapsed workspace initially placed the editor in the zero-width grid column
+
+- What: The first live collapse test hid the sidebar but reported a zero-width editor.
+- Where: `.workspace-shell--sidebar-collapsed` in `src/App.css`.
+- When/how: The fixed reopen button replaced the sidebar as the first child, while CSS Grid auto-placement assigned the editor to the zero-width first column.
+- Why: Out-of-flow positioned children still affected the grid item's auto-placement order in this layout.
+- Impact: The collapse control appeared, but the canvas did not receive the released workspace width.
+- Tried/result: Live geometry exposed the zero width; explicitly assigning `.workspace-editor` to grid column 2 restored the full viewport while preserving reopen behavior.
+- Solution: Keep the editor on explicit grid column 2 in both expanded and collapsed workspace states.
+
+### Local Vite health differed between localhost and 127.0.0.1
+
+- What: The first `127.0.0.1:5199` health check reported connection refused even though a second Vite launch reported port 5199 occupied.
+- Where: Local browser-verification startup only.
+- When/how: The hidden Vite process bound the `localhost` listener; the explicit IPv4 loopback probe did not reach it.
+- Why: Vite's default host binding in this Windows session resolved through localhost rather than the probed IPv4 address.
+- Impact: A redundant observable launch selected port 5200; it was immediately stopped after confirming `localhost:5199` returned HTTP 200.
+- Tried/result: Checked both hostname forms and both ports, retained the intended 5199 process, and used `http://localhost:5199/` for browser verification.
+- Solution: Probe the same localhost hostname printed by Vite, or start it with an explicit host when IPv4-only access is required.
+
+### Browser automation could not drive the pointer-captured drag handle
+
+- What: The in-app browser's coordinate drag did not update the minimized controller position.
+- Where: Live automation of the existing Pointer Events drag handle.
+- When/how: After the new sidebar-aware clamp made the handle visible and the controller was minimized.
+- Why: The browser automation surface did not deliver a usable pointer-capture drag sequence to the span handle in this run; its viewport coordinate scaling also differed from CSS pixels.
+- Impact: Collapse, reopen, minimize, expand, visibility, clamping, and state preservation are live-proven; automated physical drag remains unproven in this run. The existing pointer-capture implementation and pure drag/clamp tests remain unchanged and passing.
+- Tried/result: Tested both native and scaled coordinate paths, inspected exact hit boxes, and confirmed no application errors or state changes occurred.
+- Solution: User-check the now-visible drag handle with a physical pointer; if it fails there, capture that specific input path and add a browser-event regression.
+
 ### Unknown MCP project actions could fall through to revision restore
 
 - What: Any unrecognized `projectAction.action` reached the durable controller and was treated as `restore-revision`.

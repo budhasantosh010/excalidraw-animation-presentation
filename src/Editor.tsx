@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   convertToExcalidrawElements,
   Excalidraw,
@@ -44,6 +44,7 @@ import type { ControllerPlacement } from './controllerPosition'
 import { TimelinePanel } from './TimelinePanel'
 import { ExportPanel } from './ExportPanel'
 import type { ExportRange } from './exportModel'
+import { SequencePanel } from './SequencePanel'
 
 export type EditorSnapshot = {
   elements: readonly ExcalidrawElement[]
@@ -51,6 +52,8 @@ export type EditorSnapshot = {
   files: BinaryFiles
   frameId: string | null
 }
+
+const SEQUENCE_PANEL_COLLAPSED_KEY = 'sanverse-animation-sequence-collapsed-v1'
 
 const getPersistedSceneKey = (
   elements: readonly ExcalidrawElement[],
@@ -72,6 +75,7 @@ const getPersistedSceneKey = (
 
 type EditorProps = {
   controllerPlacement: ControllerPlacement
+  controllerLeftInset?: number
   onPresent: (snapshot: EditorSnapshot) => void
   onSnapshotChange?: (snapshot: EditorSnapshot) => void
   initialSnapshot?: EditorSnapshot
@@ -80,6 +84,7 @@ type EditorProps = {
 
 export function Editor({
   controllerPlacement,
+  controllerLeftInset = 0,
   onPresent,
   onSnapshotChange,
   initialSnapshot,
@@ -89,9 +94,28 @@ export function Editor({
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [step, setStep] = useState(1)
   const [effect, setEffect] = useState<SanverseAnimation['effect']>('auto')
+  const [sequenceCollapsed, setSequenceCollapsed] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(SEQUENCE_PANEL_COLLAPSED_KEY)
+      return saved === null ? true : saved === 'true'
+    } catch {
+      return true
+    }
+  })
   const [stepCount, setStepCount] = useState(() =>
     getStepCount(initialSnapshot?.elements ?? []),
   )
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SEQUENCE_PANEL_COLLAPSED_KEY,
+        String(sequenceCollapsed),
+      )
+    } catch {
+      // Keep the panel usable when storage is unavailable.
+    }
+  }, [sequenceCollapsed])
   const [liveElements, setLiveElements] = useState<readonly ExcalidrawElement[]>(
     initialSnapshot?.elements ?? [],
   )
@@ -108,6 +132,13 @@ export function Editor({
   const [fileStatus, setFileStatus] = useState('')
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [timelineOpen, setTimelineOpen] = useState(false)
+  const [controllerCollapsed, setControllerCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem('sanverse-animation-controller-collapsed-v1') === 'true'
+    } catch {
+      return false
+    }
+  })
   const [exportOpen, setExportOpen] = useState(false)
   const [assetBusy, setAssetBusy] = useState(false)
   const [iconQuery, setIconQuery] = useState('')
@@ -131,6 +162,17 @@ export function Editor({
         )
       : '',
   )
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'sanverse-animation-controller-collapsed-v1',
+        String(controllerCollapsed),
+      )
+    } catch {
+      // Keep the controller usable when storage is unavailable.
+    }
+  }, [controllerCollapsed])
 
   const sequence = useMemo(() => {
     const rows = new Map<
@@ -613,8 +655,10 @@ export function Editor({
       </div>
 
       {sequence.length ? (
-        <aside className="sequence-panel" aria-label="Reveal sequence">
-          <strong>Sequence</strong>
+        <SequencePanel
+          collapsed={sequenceCollapsed}
+          onCollapsedChange={setSequenceCollapsed}
+        >
           <div className="sequence-list">
             {sequence.map((row) => (
               <button
@@ -631,7 +675,7 @@ export function Editor({
               </button>
             ))}
           </div>
-        </aside>
+        </SequencePanel>
       ) : null}
 
       {showAssetTools ? (
@@ -730,6 +774,9 @@ export function Editor({
       <DraggableControllerBar
         className="animation-toolbar"
         ariaLabel="Animation controls"
+        collapsed={controllerCollapsed}
+        leftInset={controllerLeftInset}
+        onCollapsedChange={setControllerCollapsed}
         placement={controllerPlacement}
       >
         <div className="toolbar-stat">
