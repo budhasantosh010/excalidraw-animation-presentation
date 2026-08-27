@@ -173,6 +173,58 @@ describe('lean animation MCP', () => {
     await expect(client.connect(transport)).rejects.toThrow(/403|Forbidden/)
   })
 
+  it('advertises the exact storyboard and revision operation contracts', async () => {
+    const { port, secret } = await startOriginTestServer()
+    const client = new Client({ name: 'contract-test', version: '1.0.0' })
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${port}/mcp/${secret}/`),
+    )
+    await client.connect(transport)
+    cleanup.push(() => client.close())
+
+    const tools = await client.listTools()
+    const createTool = tools.tools.find((tool) => tool.name === 'create_animation')
+    const reviseTool = tools.tools.find((tool) => tool.name === 'revise_animation')
+    const storyboardSchema = createTool?.inputSchema.properties?.storyboard as
+      | Record<string, unknown>
+      | undefined
+    const operationsSchema = reviseTool?.inputSchema.properties?.operations as
+      | Record<string, unknown>
+      | undefined
+
+    expect(storyboardSchema).toMatchObject({
+      type: 'object',
+      properties: {
+        projectName: { type: 'string' },
+        scenes: { type: 'array' },
+      },
+      required: ['projectName', 'scenes'],
+      additionalProperties: false,
+    })
+
+    const advertisedOperations = JSON.stringify(operationsSchema)
+    for (const operation of [
+      'add_element',
+      'change_text',
+      'set_animation_step',
+      'set_animation_effect',
+      'set_animation_timing',
+      'set_animation_group',
+      'clear_animation',
+      'set_scene',
+      'set_camera_track',
+      'move_element',
+      'update_element',
+      'duplicate_element',
+      'delete_element',
+      'reorder_element',
+      'set_bindings',
+      'set_excalidraw_groups',
+    ]) {
+      expect(advertisedOperations).toContain(`"${operation}"`)
+    }
+  })
+
   it('initializes, exposes the UI resource, and hands the exact project to create/open', async () => {
     const outputDir = await mkdtemp(join(tmpdir(), 'animation-mcp-'))
     const secret = 's'.repeat(43)
@@ -290,7 +342,42 @@ describe('lean animation MCP', () => {
         arguments: {},
       }),
     )
-    expect(status).toMatchObject({ status: 'ok', port: running.port })
+    expect(status).toMatchObject({
+      status: 'ok',
+      port: running.port,
+      build: {
+        gitSha: 'unknown',
+        buildTime: 'unknown',
+        schemaVersion: 2,
+        storageVersion: 1,
+      },
+      capabilities: {
+        persistence: {
+          workspaces: true,
+          autosave: true,
+          crashRecovery: 'browser-local-journal',
+          revisionHistory: true,
+          thumbnails: 'not-integrated',
+        },
+        animation: {
+          presets: ['auto', 'appear', 'fade', 'pop', 'draw'],
+          transforms: true,
+          easing: true,
+          stagger: true,
+          scenes: true,
+          camera: true,
+        },
+        inspection: {
+          semanticProjectIndex: true,
+          revisionBoundPagination: true,
+        },
+      },
+      limits: {
+        maxScenesPerStoryboard: 20,
+        maxOperationsPerRevision: 100,
+        maxInspectionElementsPerPage: 200,
+      },
+    })
 
     const createResult = await client.callTool({
         name: 'create_animation',
@@ -321,6 +408,26 @@ describe('lean animation MCP', () => {
       projectId: expect.stringMatching(/^prj_/),
     })
     expect(createResult.structuredContent).toMatchObject(created)
+    expect(createResult.structuredContent).toMatchObject({
+      creationReceipt: {
+        projectId,
+        revision: 1,
+        createdElementIds: expect.arrayContaining([
+          'frame_scene-1',
+          'input',
+          'input__label',
+          'flow',
+          'output',
+          'output__label',
+        ]),
+        sceneIds: ['scene-1'],
+      },
+      projectIndex: {
+        schemaVersion: 1,
+        project: { projectId, revision: 1 },
+        pagination: { returned: 5, total: 5 },
+      },
+    })
     expect(createResult._meta).toMatchObject({
       filename,
       revision: 1,
@@ -347,6 +454,28 @@ describe('lean animation MCP', () => {
       uiResourceUri: UI_RESOURCE_URI,
       projectSnapshot: document,
     })
+
+    const inspectedResult = await client.callTool({
+      name: 'open_animation_studio',
+      arguments: { projectId, query: 'Input', limit: 1 },
+    })
+    expect(inspectedResult.structuredContent).toMatchObject({
+      projectIndex: {
+        schemaVersion: 1,
+        project: { projectId, revision: 1 },
+        elements: [
+          expect.objectContaining({
+            id: 'input',
+            type: 'rectangle',
+            boundElementIds: expect.arrayContaining(['input__label', 'flow']),
+            animation: expect.objectContaining({ step: 1, effect: 'pop' }),
+          }),
+        ],
+        pagination: { returned: 1, total: 2, limit: 1 },
+        filtersApplied: { query: 'Input' },
+      },
+    })
+    expect(inspectedResult._meta).toMatchObject({ projectSnapshot: document })
     expect(byId.input.customData.sanverseAnimation).toMatchObject({
       version: 1,
       step: 1,
@@ -362,8 +491,68 @@ describe('lean animation MCP', () => {
       arguments: { query: 'lean mcp' },
     }))
     expect(listed.projects).toEqual(expect.arrayContaining([
-      expect.objectContaining({ projectId, currentRevision: 1 }),
+      expect.objectContaining({
+        projectId,
+        currentRevision: 1,
+        revision: 1,
+        trashed: false,
+        sceneCount: 1,
+        drawableElementCount: 5,
+        animatedElementCount: 5,
+        thumbnailAvailable: false,
+      }),
     ]))
+
+    const mixedRevision = await client.callTool({
+      name: 'revise_animation',
+      arguments: {
+        projectId,
+        operations: [
+          { type: 'move_element', elementId: 'input', x: 999, y: 999 },
+        ],
+        projectAction: { action: 'rename', name: 'Must not be applied' },
+      },
+    })
+    expect(mixedRevision.isError).toBe(true)
+    const mixedContent = mixedRevision.content as Array<{
+      type: string
+      text: string
+    }>
+    expect(
+      mixedContent[0]?.text,
+    ).toMatch(/projectAction.*operations|operations.*projectAction/i)
+
+    const fileAction = await client.callTool({
+      name: 'revise_animation',
+      arguments: {
+        filename,
+        projectAction: { action: 'rename', name: 'Must not be applied' },
+      },
+    })
+    expect(fileAction.isError).toBe(true)
+
+    const ambiguousTarget = await client.callTool({
+      name: 'revise_animation',
+      arguments: {
+        filename,
+        projectId,
+        expectedRevision: 1,
+        operations: [
+          { type: 'move_element', elementId: 'input', x: 999, y: 999 },
+        ],
+      },
+    })
+    expect(ambiguousTarget.isError).toBe(true)
+
+    const actionWithIgnoredRevision = await client.callTool({
+      name: 'revise_animation',
+      arguments: {
+        projectId,
+        expectedRevision: 1,
+        projectAction: { action: 'rename', name: 'Must not be applied' },
+      },
+    })
+    expect(actionWithIgnoredRevision.isError).toBe(true)
 
     const revisedResult = await client.callTool({
       name: 'revise_animation',
@@ -373,13 +562,40 @@ describe('lean animation MCP', () => {
         operations: [{ type: 'move_element', elementId: 'input', x: 333, y: 222 }],
       },
     })
-    expect(textResult(revisedResult)).toMatchObject({ projectId, revision: 2 })
+    expect(textResult(revisedResult)).toMatchObject({
+      projectId,
+      revision: 2,
+      mutationReceipt: {
+        projectId,
+        previousRevision: 1,
+        revision: 2,
+        operationsApplied: 1,
+        createdElementIds: [],
+        updatedElementIds: ['input'],
+        deletedElementIds: [],
+        affectedSceneIds: ['scene-1'],
+        affectedElements: [
+          expect.objectContaining({ id: 'input', x: 333, y: 222 }),
+        ],
+      },
+    })
     expect(revisedResult._meta).toMatchObject({
       projectSnapshot: {
         elements: expect.arrayContaining([
           expect.objectContaining({ id: 'input', x: 333, y: 222 }),
         ]),
       },
+    })
+
+    const validated = textResult(await client.callTool({
+      name: 'validate_animation',
+      arguments: { projectId, revision: 2 },
+    }))
+    expect(validated).toMatchObject({
+      valid: true,
+      errors: [],
+      elementCount: 5,
+      sceneCount: 1,
     })
 
     const oldRevision = await client.callTool({
@@ -392,6 +608,27 @@ describe('lean animation MCP', () => {
         elements: expect.arrayContaining([
           expect.objectContaining({ id: 'input', x: 120 }),
         ]),
+      },
+    })
+
+    const restoredResult = await client.callTool({
+      name: 'revise_animation',
+      arguments: {
+        projectId,
+        projectAction: { action: 'restore-revision', revision: 1 },
+      },
+    })
+    expect(textResult(restoredResult)).toMatchObject({
+      projectId,
+      revision: 3,
+      projectActionReceipt: {
+        action: 'restore-revision',
+        sourceRevision: 1,
+        previousRevision: 2,
+        revision: 3,
+        snapshotChanged: true,
+        updatedElementIds: expect.arrayContaining(['input']),
+        affectedSceneIds: ['scene-1'],
       },
     })
   })

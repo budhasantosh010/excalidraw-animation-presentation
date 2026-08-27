@@ -589,3 +589,83 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 - Why: Wiring the existing UI/MCP save paths belongs to Micro 1.7 and would broaden this backend-only slice.
 - Impact: New or edited projects may not receive thumbnails until workspace UI integration; durable saves are unaffected.
 - Solution: Inject the scheduler after successful create/update commits during Micro 1.7.
+
+### Full Vitest discovery included the protected cloud-copy test directory
+
+- What: The first final `npm test -- --run` reported one failed suite after 275 application tests passed because it collected `implementing in cloud/tests/rendered-html.test.mjs`, which is a Node test file with no Vitest suite.
+- Where: Workspace-wide Vitest discovery, outside the tracked local application sources.
+- When/how: During the final serial verification with the protected untracked `implementing in cloud/` directory present beside the local project.
+- Why: Vitest recursively discovered the separate cloud-copy test filename even though that protected directory is not part of the tracked local branch.
+- Impact: Test collection returned nonzero; no tracked application test failed and no production or cloud file changed.
+- Tried/result: Confirmed 36 tracked/local test files and 275 tests passed before the unrelated collection failure.
+- Solution: Run the authoritative local suite with `implementing in cloud/**` excluded while preserving the protected cloud copy unchanged.
+
+### New MCP workflow test expected the wrong validator response shape
+
+- What: The focused MCP test failed after adding an explicit `validate_animation` call because the assertion expected creation-summary field names.
+- Where: `mcp/server.test.ts`, final validation step of the local SDK workflow.
+- When/how: During the final pre-commit protocol proof after the production implementation already passed typecheck and lint.
+- Why: The existing validator contract returns `valid`, `errors`, `elementCount`, and `sceneCount`; the test incorrectly expected `status`, animation counts, and step count.
+- Impact: Test-only assertion failure; no MCP tool, file, project, or animation behavior failed or changed.
+- Tried/result: Compared the received response with the established validator implementation and retained that production contract.
+- Solution: Assert the validator's existing response fields while still proving the real `validate_animation` tool call succeeds.
+
+### Independent review found under-bound cursors and incomplete action receipts
+
+- What: The first fail-closed review rejected the staged patch because pagination cursors were bound only to revision/offset and project actions returned no explicit receipt.
+- Where: `mcp/project-index.ts` cursor encoding and `mcp/server.ts` project-action response composition.
+- When/how: Required independent pre-commit review after all initial automated gates passed.
+- Why: Revision alone cannot distinguish two projects, filter sets, or changed file-backed content; restore-revision can replace a snapshot even though it is a project action.
+- Impact: A reused cursor could skip inconsistent results, and ChatGPT could not confirm what a restore-revision action changed.
+- Tried/result: Added project/filter/revision/content-bound cursors, before/after content fingerprints, bounded-offset rejection, and action-specific receipts; targeted tests passed 19/19.
+- Solution: Bind continuation tokens to the full read scope and return a truthful receipt for every state-changing action.
+
+### Cursor test rebuilt nondeterministic fixtures between pages
+
+- What: The first GREEN run rejected the intended second page as stale after cursor hardening.
+- Where: `mcp/project-index.test.ts`, pagination test setup.
+- When/how: The test called the storyboard builder separately for page one and page two.
+- Why: The builder creates fresh serialized element state, so the two documents were not the same exact snapshot even though their visible content matched.
+- Impact: Test-only setup failure; production stale-snapshot detection behaved correctly.
+- Tried/result: Reused one exact snapshot across both page calls and retained separate changed-snapshot rejection coverage; targeted tests passed.
+- Solution: Pagination tests must reuse the identical serialized snapshot when asserting a valid continuation.
+
+### Second review found mixed revision inputs could make a false applied-count claim
+
+- What: The second fail-closed review found that `revise_animation` accepted both `projectAction` and nonempty `operations`, executed only the action, and could still report the operation count.
+- Where: `mcp/server.ts`, `revise_animation` request dispatch and response summary.
+- When/how: Independent re-review after fixing the first review findings.
+- Why: The two existing revision modes were selected by branch precedence but were not explicitly mutually exclusive.
+- Impact: A malformed mixed request could falsely tell ChatGPT that ignored element operations were applied.
+- Tried/result: Added a pre-mutation mutual-exclusion guard, made action summaries explicitly report zero operations, and added an MCP regression test; the targeted test passed.
+- Solution: Reject mixed action/operation requests before any state change and report counts only for the executed mode.
+
+### One static-scan PowerShell pipeline had invalid syntax
+
+- What: A repeated security-scan command stopped with `An empty pipe element is not allowed.`
+- Where: The one-off local pre-commit verification command, not a repository script.
+- When/how: The `foreach` expression was piped directly without first assigning its result.
+- Why: That PowerShell expression form was syntactically invalid in the current shell.
+- Impact: No files or runtime behavior changed; the scan did not run in that attempt.
+- Tried/result: Assigned the loop output to a variable and reran the same scan; all five security categories returned zero matches.
+- Solution: Materialize PowerShell loop output before piping it to a formatter.
+
+### MCP error-result regression assertion needed an explicit SDK type narrowing
+
+- What: The final MCP typecheck rejected direct indexing into the mixed-request error result.
+- Where: `mcp/server.test.ts`, the new mutual-exclusion regression assertion.
+- When/how: Final `npm run mcp:check` after the runtime test had already passed.
+- Why: The SDK intentionally types tool-result `content` as `unknown` at that boundary.
+- Impact: Test compilation only; the server guard and runtime MCP response were already correct.
+- Tried/result: Narrowed the known test result to the SDK text-content shape before reading it.
+- Solution: Explicitly narrow MCP error content in tests before asserting its text.
+
+### Final review found project actions could be silently ignored for file targets
+
+- What: The final fail-closed review found that a `projectAction` with `filename` but no `projectId` entered the file-operation branch and could return success without executing the action.
+- Where: `mcp/server.ts`, `revise_animation` target selection.
+- When/how: Independent review of the staged mutual-exclusion fix.
+- Why: The handler prioritized durable-project logic only when `projectId` existed, but it did not validate which inputs were meaningful for each target mode.
+- Impact: A malformed request could receive a false-success no-op response; mixed filename/projectId or ignored expectedRevision inputs were also ambiguous.
+- Tried/result: Added pre-mutation guards for exclusive targets, project-action project IDs, and supported optimistic-revision usage; focused MCP tests passed.
+- Solution: Validate the revision mode and target combination before selecting any mutation branch.

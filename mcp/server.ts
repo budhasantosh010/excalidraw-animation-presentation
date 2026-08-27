@@ -29,6 +29,18 @@ import {
   type McpAppBuild,
 } from './ui-assets.ts'
 import { createProjectControl, type ProjectControl } from './project-control.ts'
+import {
+  buildCreationReceipt,
+  buildMutationReceipt,
+  buildProjectActionReceipt,
+  buildProjectIndex,
+} from './project-index.ts'
+import {
+  projectActionSchema,
+  projectInspectionShape,
+  revisionOperationSchema,
+  storyboardSchema,
+} from './tool-contracts.ts'
 
 export type AnimationMcpConfig = {
   host: '127.0.0.1'
@@ -38,6 +50,10 @@ export type AnimationMcpConfig = {
   allowedHosts: string[]
   publicOrigin: string
   workspaceDataRoot?: string
+  buildIdentity?: {
+    gitSha?: string
+    buildTime?: string
+  }
 }
 
 const allowedOrigins = new Set([
@@ -115,9 +131,10 @@ const jsonResult = (value: unknown) => ({
 const appProjectResult = (
   summary: Record<string, unknown> & { filename: string; revision: number },
   projectSnapshot: ExcalidrawDocument,
+  additions: Record<string, unknown> = {},
 ) => ({
-  ...jsonResult(summary),
-  structuredContent: summary,
+  ...jsonResult({ ...summary, ...additions }),
+  structuredContent: { ...summary, ...additions },
   _meta: {
     filename: summary.filename,
     revision: summary.revision,
@@ -187,6 +204,46 @@ const createToolServer = (
         exportFormats: ['excalidraw', 'json', 'png', 'svg', 'webm', 'mp4-when-supported'],
         durableProjects: true,
         optimisticRevisionControl: true,
+        build: {
+          gitSha: config.buildIdentity?.gitSha || 'unknown',
+          buildTime: config.buildIdentity?.buildTime || 'unknown',
+          schemaVersion: 2,
+          storageVersion: 1,
+        },
+        capabilities: {
+          persistence: {
+            workspaces: true,
+            autosave: true,
+            crashRecovery: 'browser-local-journal',
+            revisionHistory: true,
+            thumbnails: 'not-integrated',
+          },
+          animation: {
+            presets: ['auto', 'appear', 'fade', 'pop', 'draw'],
+            transforms: true,
+            easing: true,
+            stagger: true,
+            scenes: true,
+            camera: true,
+          },
+          inspection: {
+            semanticProjectIndex: true,
+            revisionBoundPagination: true,
+          },
+          export: {
+            animatedExcalidraw: true,
+            json: true,
+            png: true,
+            svg: true,
+            webm: 'browser-dependent',
+            mp4: 'browser-dependent',
+          },
+        },
+        limits: {
+          maxScenesPerStoryboard: 20,
+          maxOperationsPerRevision: 100,
+          maxInspectionElementsPerPage: 200,
+        },
         tools: [
           'get_animation_status',
           'create_animation',
@@ -207,7 +264,7 @@ const createToolServer = (
       description:
         'Create one animated Excalidraw file from a structured storyboard.',
       inputSchema: {
-        storyboard: z.record(z.any()),
+        storyboard: storyboardSchema,
         filename: z.string().optional(),
         saveToWorkspace: z.boolean().optional(),
         workspaceId: z.string().optional(),
@@ -245,7 +302,24 @@ const createToolServer = (
           revision: project.revision.number,
         })
       }
-      return appProjectResult(summary, projectSnapshot)
+      const identifiedSummary = summary as typeof summary & {
+        projectId?: string
+        workspaceId?: string
+      }
+      const indexIdentity = {
+        filename: summary.filename,
+        revision: summary.revision,
+        ...(typeof identifiedSummary.projectId === 'string'
+          ? { projectId: identifiedSummary.projectId }
+          : {}),
+        ...(typeof identifiedSummary.workspaceId === 'string'
+          ? { workspaceId: identifiedSummary.workspaceId }
+          : {}),
+      }
+      return appProjectResult(summary, projectSnapshot, {
+        creationReceipt: buildCreationReceipt(projectSnapshot, indexIdentity),
+        projectIndex: buildProjectIndex(projectSnapshot, indexIdentity),
+      })
     },
   )
 
@@ -259,18 +333,29 @@ const createToolServer = (
         filename: z.string().optional(),
         projectId: z.string().optional(),
         expectedRevision: z.number().int().positive().optional(),
-        operations: z.array(z.record(z.any())).max(100).optional(),
-        projectAction: z.object({
-          action: z.enum(['rename', 'duplicate', 'trash', 'restore', 'restore-revision']),
-          name: z.string().optional(),
-          targetWorkspaceId: z.string().optional(),
-          revision: z.number().int().positive().optional(),
-        }).strict().optional(),
+        operations: z.array(revisionOperationSchema).max(100).optional(),
+        projectAction: projectActionSchema.optional(),
       },
       _meta: { ui: { resourceUri: UI_RESOURCE_URI } },
     },
     async ({ filename, projectId, expectedRevision, operations = [], projectAction }) => {
+      if (filename && projectId) {
+        throw new Error('filename and projectId are mutually exclusive.')
+      }
+      if (projectAction && operations.length) {
+        throw new Error('projectAction and operations are mutually exclusive.')
+      }
+      if (projectAction && !projectId) {
+        throw new Error('projectAction requires projectId.')
+      }
+      if (projectAction && expectedRevision !== undefined) {
+        throw new Error('expectedRevision is not supported with projectAction.')
+      }
+      if (!projectId && expectedRevision !== undefined) {
+        throw new Error('expectedRevision requires projectId.')
+      }
       if (projectId) {
+        const before = projectControl.open({ projectId })
         const project = projectAction
           ? projectControl.action({
               projectId,
@@ -290,20 +375,68 @@ const createToolServer = (
             snapshot,
             project.revision.number,
           ),
-          operationsApplied: operations.length,
+          operationsApplied: projectAction ? 0 : operations.length,
           uiResourceUri: UI_RESOURCE_URI,
           uiResourceAttached: true,
         }
-        return appProjectResult(summary, snapshot)
+        const additions = projectAction
+          ? {
+              projectActionReceipt: buildProjectActionReceipt(
+                before.snapshot as ExcalidrawDocument,
+                snapshot,
+                {
+                  action: projectAction.action,
+                  ...(projectAction.action === 'restore-revision'
+                    ? { sourceRevision: projectAction.revision }
+                    : {}),
+                  sourceProjectId: before.projectId,
+                  filename: summary.filename,
+                  name: project.name,
+                  projectId: project.projectId,
+                  workspaceId: project.workspaceId,
+                  previousRevision: before.revision.number,
+                  revision: project.revision.number,
+                },
+              ),
+            }
+          : {
+              mutationReceipt: buildMutationReceipt(
+                before.snapshot as ExcalidrawDocument,
+                snapshot,
+                operations.length,
+                {
+                  filename: summary.filename,
+                  name: project.name,
+                  projectId: project.projectId,
+                  workspaceId: project.workspaceId,
+                  previousRevision: before.revision.number,
+                  revision: project.revision.number,
+                },
+              ),
+            }
+        return appProjectResult(summary, snapshot, additions)
       }
       if (!filename) throw new Error('filename or projectId is required.')
+      const before = await readAnimationFile(config.outputDir, filename)
+      const previousRevision = summarizeAnimationDocument(filename, before).revision
       const revised = await reviseAnimationFile(config.outputDir, filename, operations)
       const snapshot = await readAnimationFile(config.outputDir, filename)
       return appProjectResult({
         ...revised,
         uiResourceUri: UI_RESOURCE_URI,
         uiResourceAttached: true,
-      }, snapshot)
+      }, snapshot, {
+        mutationReceipt: buildMutationReceipt(
+          before,
+          snapshot,
+          operations.length,
+          {
+            filename: revised.filename,
+            previousRevision,
+            revision: revised.revision,
+          },
+        ),
+      })
     },
   )
 
@@ -338,12 +471,31 @@ const createToolServer = (
         includeTrashed: z.boolean().optional(),
       },
     },
-    async ({ workspaceId, query, includeTrashed }) =>
-      jsonResult({
+    async ({ workspaceId, query, includeTrashed }) => {
+      const projects = projectControl.list({ workspaceId, query, includeTrashed })
+        .map((project) => {
+          const durable = projectControl.open({ projectId: project.projectId })
+          const animation = summarizeAnimationDocument(
+            `${project.name}.excalidraw`,
+            durable.snapshot as ExcalidrawDocument,
+            project.currentRevision,
+          )
+          return {
+            ...project,
+            revision: project.currentRevision,
+            trashed: project.trash.state === 'trashed',
+            sceneCount: animation.sceneCount,
+            drawableElementCount: animation.drawableElementCount,
+            animatedElementCount: animation.animatedElementCount,
+            thumbnailAvailable: false,
+          }
+        })
+      return jsonResult({
         filenames: await listAnimationFiles(config.outputDir),
         workspaces: projectControl.workspaces(),
-        projects: projectControl.list({ workspaceId, query, includeTrashed }),
-      }),
+        projects,
+      })
+    },
   )
 
   registerAppTool(
@@ -356,12 +508,24 @@ const createToolServer = (
         filename: z.string().optional(),
         projectId: z.string().optional(),
         revision: z.number().int().positive().optional(),
+        ...projectInspectionShape,
       },
       _meta: {
         ui: { resourceUri: UI_RESOURCE_URI },
       },
     },
-    async ({ filename, projectId, revision }) => {
+    async ({
+      filename,
+      projectId,
+      revision,
+      sceneId,
+      elementIds,
+      query,
+      elementType,
+      animationOnly,
+      limit,
+      cursor,
+    }) => {
       const durable = projectId
         ? projectControl.open({ projectId, revision })
         : undefined
@@ -385,7 +549,22 @@ const createToolServer = (
         uiResourceUri: UI_RESOURCE_URI,
         uiResourceAttached: true,
       }
-      return appProjectResult(summary, projectSnapshot)
+      const projectIndex = buildProjectIndex(
+        projectSnapshot,
+        {
+          filename: summary.filename,
+          revision: summary.revision,
+          ...(durable
+            ? {
+                name: durable.name,
+                projectId: durable.projectId,
+                workspaceId: durable.workspaceId,
+              }
+            : {}),
+        },
+        { sceneId, elementIds, query, elementType, animationOnly, limit, cursor },
+      )
+      return appProjectResult(summary, projectSnapshot, { projectIndex })
     },
   )
 
@@ -523,6 +702,10 @@ if (isDirectRun) {
     allowedHosts,
     publicOrigin,
     workspaceDataRoot,
+    buildIdentity: {
+      gitSha: process.env.MCP_BUILD_SHA,
+      buildTime: process.env.MCP_BUILD_TIME,
+    },
   })
   console.log(`Animation MCP listening on 127.0.0.1:${running.port}`)
 }
