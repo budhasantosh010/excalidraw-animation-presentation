@@ -223,6 +223,11 @@ describe('lean animation MCP', () => {
         },
       )
     }
+    const reviseTool = tools.tools.find((tool) => tool.name === 'revise_animation')
+    expect(
+      (reviseTool?.inputSchema.properties?.projectAction as Record<string, any>)
+        ?.properties?.action?.enum,
+    ).toEqual(['rename', 'duplicate', 'trash', 'restore', 'restore-revision'])
 
     const resources = await client.listResources()
     expect(resources.resources).toEqual(

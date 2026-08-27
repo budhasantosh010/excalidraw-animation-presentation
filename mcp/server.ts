@@ -260,7 +260,12 @@ const createToolServer = (
         projectId: z.string().optional(),
         expectedRevision: z.number().int().positive().optional(),
         operations: z.array(z.record(z.any())).max(100).optional(),
-        projectAction: z.record(z.any()).optional(),
+        projectAction: z.object({
+          action: z.enum(['rename', 'duplicate', 'trash', 'restore', 'restore-revision']),
+          name: z.string().optional(),
+          targetWorkspaceId: z.string().optional(),
+          revision: z.number().int().positive().optional(),
+        }).strict().optional(),
       },
       _meta: { ui: { resourceUri: UI_RESOURCE_URI } },
     },
@@ -269,8 +274,8 @@ const createToolServer = (
         const project = projectAction
           ? projectControl.action({
               projectId,
-              action: String(projectAction.action) as never,
-              name: projectAction.name as string | undefined,
+              action: projectAction.action,
+              name: projectAction.name,
               targetWorkspaceId: projectAction.targetWorkspaceId,
               revision: projectAction.revision,
             })

@@ -89,8 +89,9 @@ export const createProjectControl = async (dataRoot: string) => {
       revision?: unknown
     }) {
       const projectId = parseProjectId(input.projectId)
-      if (input.action === 'rename') return files.rename(projectId, { name: input.name ?? '' })
-      if (input.action === 'duplicate') {
+      const action = String(input.action)
+      if (action === 'rename') return files.rename(projectId, { name: input.name ?? '' })
+      if (action === 'duplicate') {
         return files.duplicate(projectId, {
           name: input.name ?? '',
           targetWorkspaceId: input.targetWorkspaceId === undefined
@@ -98,9 +99,12 @@ export const createProjectControl = async (dataRoot: string) => {
             : parseWorkspaceId(input.targetWorkspaceId),
         })
       }
-      if (input.action === 'trash') return projects.trash(projectId)
-      if (input.action === 'restore') return projects.restore(projectId)
-      return history.restore(projectId, parseRevisionNumber(input.revision))
+      if (action === 'trash') return projects.trash(projectId)
+      if (action === 'restore') return projects.restore(projectId)
+      if (action === 'restore-revision') {
+        return history.restore(projectId, parseRevisionNumber(input.revision))
+      }
+      throw new Error(`Unsupported project action: ${action}`)
     },
     close: () => store.close(),
   }

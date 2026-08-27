@@ -53,4 +53,41 @@ describe('project-aware MCP control', () => {
     expect(control.history(created.projectId).map((entry) => entry.revisionNumber)).toEqual([3, 2, 1])
     control.close()
   })
+
+  it('rejects unknown project actions without creating a revision', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'animation-project-action-'))
+    roots.push(root)
+    const control = await createProjectControl(root)
+    const created = control.create({
+      name: 'Action safety',
+      snapshot: buildAnimationDocument({
+        projectName: 'Action safety',
+        scenes: [{
+          sceneId: 'scene-a',
+          title: 'Action safety',
+          elements: [{
+            id: 'box', type: 'rectangle', x: 10, y: 20, width: 100, height: 80,
+            animation: { step: 1, effect: 'fade' },
+          }],
+        }],
+      }),
+    })
+
+    let actionError: unknown
+    try {
+      control.action({
+        projectId: created.projectId,
+        action: 'restore-revison' as never,
+        revision: 1,
+      })
+    } catch (error) {
+      actionError = error
+    }
+    const revisions = control.history(created.projectId).map((entry) => entry.revisionNumber)
+    control.close()
+    expect(actionError).toEqual(expect.objectContaining({
+      message: expect.stringMatching(/unsupported project action/i),
+    }))
+    expect(revisions).toEqual([1])
+  })
 })

@@ -392,6 +392,16 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 
 ## Intentional current limitation
 
+### Unknown MCP project actions could fall through to revision restore
+
+- What: Any unrecognized `projectAction.action` reached the durable controller and was treated as `restore-revision`.
+- Where: `mcp/server.ts` accepted a permissive record and `mcp/project-control.ts` used an unconditional final restore branch.
+- When/how: A caller supplied a typo or unsupported action together with a revision number.
+- Why: Compile-time union types were bypassed by a runtime string cast, and runtime dispatch lacked an explicit default rejection.
+- Impact: A malformed request could create an unintended restored revision instead of failing safely.
+- Tried/result: A focused regression reproduced the unsafe fallback; strict action schema validation plus explicit controller rejection now prevents mutation.
+- Solution: Validate actions with a closed enum at the MCP boundary and reject all unknown actions again at the durable-service boundary.
+
 ### Pilot seeder originally used case-sensitive name equality
 
 - What: The first implementation could miss an existing pilot whose name differed only by case, whitespace, or Unicode compatibility characters.
