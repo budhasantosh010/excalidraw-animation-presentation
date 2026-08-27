@@ -392,6 +392,66 @@ This is the single failure log for the Animated Excalidraw agency-workspace expa
 
 ## Intentional current limitation
 
+### Pilot seeder originally used case-sensitive name equality
+
+- What: The first implementation could miss an existing pilot whose name differed only by case, whitespace, or Unicode compatibility characters.
+- Where: `scripts/seed-pilot-projects.ts` during the independent pre-commit review.
+- When/how: Re-running the seeder against a canonically equivalent project name.
+- Why: The script compared raw names while the durable project store enforces normalized canonical-name uniqueness.
+- Impact: Creation could raise a name conflict and stop the remaining seed run; existing projects remained safe.
+- Tried/result: Added a failing canonical-name test, implemented the same trim/whitespace/NFKC/lowercase key used by the store, and reused it for one-pass idempotent seeding.
+- Solution: Compare all seed and stored names through `toCanonicalPilotName` before creation.
+
+### Restricted workspace could not create Git's staging lock
+
+- What: The first selective `git add` failed with permission denied for `.git/index.lock`.
+- Where: Local Phase 5 commit preparation in the managed workspace sandbox.
+- When/how: After all implementation and verification gates passed.
+- Why: Source files are writable in the sandbox, but Git metadata writes require the approved elevated execution boundary.
+- Impact: No staging or repository mutation occurred on the failed attempt.
+- Tried/result: Confirmed the working files remained unstaged; the same exact selective paths are staged only through the Git-specific elevated command.
+- Solution: Use the narrow approved Git execution boundary for local index, commit, and tag writes.
+
+### Roadmap live-acceptance work remains user-owned and unproven
+
+- What: Automated implementation is complete for the critical workflow, but the roadmap's full Phase 5 acceptance gate has not passed.
+- Where: Real client/content usage, new-conversation ChatGPT feedback, and measured before/after workflow time.
+- When/how: These checks require the user to create and export actual production deliverables and judge usefulness.
+- Why: Automated tests cannot truthfully measure human editing time, client usability, or subjective video quality.
+- Impact: The implementation checkpoint is ready, but it must not be labeled a fully accepted Phase 5 release yet.
+- Tried/result: Seeded and reopened two representative durable pilots, verified revision restore, and documented the pending measures in `PILOT_ACCEPTANCE.md`.
+- Solution: Use both pilots in real work, record time/quality results, and create the accepted Phase 5 tag only if no data-loss blocker appears.
+
+### Lower-impact roadmap breadth is not fully live-proven
+
+- What: Explicit scene duplicate/delete/complete-sequence management, real MP4 production on this browser, and a fresh-conversation ChatGPT pass over the newest durable-project extensions are not live-proven in this checkpoint.
+- Where: Roadmap Micros 2.6, 3.5, and the Phase 4/5 live gates.
+- When/how: The critical single-scene timeline, camera, durable revision, source/PNG/SVG/WebM, MCP revision, and standalone pilot paths are implemented and tested; the listed breadth remains outside the bounded closeout.
+- Why: The user directed high-impact completion first and requested that non-blocking failures be documented instead of expanding the task indefinitely.
+- Impact: Core agency/content animation work is available; do not claim every roadmap bullet or every environment-specific export path is accepted.
+- Tried/result: Deterministic scene metadata/camera, truthful MP4 capability detection, exact-revision MCP handoff, and 200 automated tests pass.
+- Solution: Add or live-prove each deferred item only when a real pilot demonstrates that it materially saves time.
+
+### Phase 5 focused test was blocked by the Windows child-process sandbox
+
+- What: Vitest stopped during Vite configuration loading with `spawn EPERM` before collecting tests.
+- Where: The first Phase 5 focused test command in the restricted execution sandbox.
+- When/how: While Vite resolved the Windows repository path and attempted its normal child-process operation.
+- Why: The execution sandbox denied Node's child-process spawn; no application module or test had run yet.
+- Impact: Environment-only verification delay; no code or data was changed.
+- Tried/result: Re-ran the identical two-file test command outside the child-process restriction; both test files and both tests passed.
+- Solution: Re-run the same approved scoped Node/Vite command outside the sandbox before classifying `spawn EPERM` as a code failure.
+
+### Phase 5 browser proof initially opened against a stopped dev server
+
+- What: The first standalone pilot verification returned connection refused, and the failed tab could not be reused because it had become an internal browser error page.
+- Where: Phase 5 local browser verification at `http://127.0.0.1:5199/`.
+- When/how: On the first verification attempt after seeding the two pilot projects.
+- Why: The Vite development server from the earlier work session was no longer running; navigation policy also prevents an internal error page from being repurposed as a normal local tab.
+- Impact: Verification was delayed only; no project, revision, or application data changed.
+- Tried/result: Restarted the known Vite command, confirmed HTTP 200, opened a fresh tab, and verified both pilot projects at revision 1 were visible.
+- Solution: Preflight the local health URL and open a fresh browser tab after any network-error page.
+
 ### First Phase 4 MCP launch split the spaced PowerShell script path
 
 - What: The MCP diagnostic could not connect because the background PowerShell process exited before starting port 3002.

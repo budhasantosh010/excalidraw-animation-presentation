@@ -42,6 +42,15 @@ describe('project-aware MCP control', () => {
     expect(revised.snapshot.elements.find((element) => element.id === 'box')).toMatchObject({ x: 400, y: 200 })
     expect(control.open({ projectId: created.projectId, revision: 1 }).snapshot.elements.find((element) => element.id === 'box')).toMatchObject({ x: 10, y: 20 })
     expect(control.history(created.projectId).map((entry) => entry.revisionNumber)).toEqual([2, 1])
+
+    const restored = control.action({
+      projectId: created.projectId,
+      action: 'restore-revision',
+      revision: 1,
+    })
+    expect(restored.revision.number).toBe(3)
+    expect(restored.snapshot.elements.find((element) => element.id === 'box')).toMatchObject({ x: 10, y: 20 })
+    expect(control.history(created.projectId).map((entry) => entry.revisionNumber)).toEqual([3, 2, 1])
     control.close()
   })
 })
