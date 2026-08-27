@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   convertToExcalidrawElements,
   Excalidraw,
@@ -41,6 +41,10 @@ import {
   DraggableControllerBar,
 } from './DraggableControllerBar'
 import type { ControllerPlacement } from './controllerPosition'
+import { TimelinePanel } from './TimelinePanel'
+import { ExportPanel } from './ExportPanel'
+import type { ExportRange } from './exportModel'
+import { SequencePanel } from './SequencePanel'
 
 export type EditorSnapshot = {
   elements: readonly ExcalidrawElement[]
@@ -49,8 +53,29 @@ export type EditorSnapshot = {
   frameId: string | null
 }
 
+const SEQUENCE_PANEL_COLLAPSED_KEY = 'sanverse-animation-sequence-collapsed-v1'
+
+const getPersistedSceneKey = (
+  elements: readonly ExcalidrawElement[],
+  appState: Partial<AppState>,
+  files: BinaryFiles,
+) => {
+  const persistedAppState = JSON.parse(
+    serializeProject([], appState, {} as BinaryFiles),
+  ) as { appState?: unknown }
+  return [
+    ...elements.map(
+      (element) =>
+        `${element.id}:${element.version}:${element.versionNonce}:${element.isDeleted ? 1 : 0}`,
+    ),
+    `appState=${JSON.stringify(persistedAppState.appState ?? {})}`,
+    `files=${Object.keys(files).sort().join(',')}`,
+  ].join('|')
+}
+
 type EditorProps = {
   controllerPlacement: ControllerPlacement
+  controllerLeftInset?: number
   onPresent: (snapshot: EditorSnapshot) => void
   onSnapshotChange?: (snapshot: EditorSnapshot) => void
   initialSnapshot?: EditorSnapshot
@@ -59,6 +84,7 @@ type EditorProps = {
 
 export function Editor({
   controllerPlacement,
+  controllerLeftInset = 0,
   onPresent,
   onSnapshotChange,
   initialSnapshot,
@@ -68,9 +94,28 @@ export function Editor({
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [step, setStep] = useState(1)
   const [effect, setEffect] = useState<SanverseAnimation['effect']>('auto')
+  const [sequenceCollapsed, setSequenceCollapsed] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(SEQUENCE_PANEL_COLLAPSED_KEY)
+      return saved === null ? true : saved === 'true'
+    } catch {
+      return true
+    }
+  })
   const [stepCount, setStepCount] = useState(() =>
     getStepCount(initialSnapshot?.elements ?? []),
   )
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SEQUENCE_PANEL_COLLAPSED_KEY,
+        String(sequenceCollapsed),
+      )
+    } catch {
+      // Keep the panel usable when storage is unavailable.
+    }
+  }, [sequenceCollapsed])
   const [liveElements, setLiveElements] = useState<readonly ExcalidrawElement[]>(
     initialSnapshot?.elements ?? [],
   )
@@ -86,6 +131,15 @@ export function Editor({
   })
   const [fileStatus, setFileStatus] = useState('')
   const [assetsOpen, setAssetsOpen] = useState(false)
+  const [timelineOpen, setTimelineOpen] = useState(false)
+  const [controllerCollapsed, setControllerCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem('sanverse-animation-controller-collapsed-v1') === 'true'
+    } catch {
+      return false
+    }
+  })
+  const [exportOpen, setExportOpen] = useState(false)
   const [assetBusy, setAssetBusy] = useState(false)
   const [iconQuery, setIconQuery] = useState('')
   const [icons, setIcons] = useState<IconifyResult[]>([])
@@ -99,7 +153,26 @@ export function Editor({
   )
   const latestFiles = useRef<BinaryFiles>(initialSnapshot?.files ?? {})
   const sceneId = useRef(crypto.randomUUID())
-  const lastReportedScene = useRef('')
+  const lastReportedScene = useRef(
+    initialSnapshot
+      ? getPersistedSceneKey(
+          initialSnapshot.elements,
+          initialSnapshot.appState,
+          initialSnapshot.files,
+        )
+      : '',
+  )
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'sanverse-animation-controller-collapsed-v1',
+        String(controllerCollapsed),
+      )
+    } catch {
+      // Keep the controller usable when storage is unavailable.
+    }
+  }, [controllerCollapsed])
 
   const sequence = useMemo(() => {
     const rows = new Map<
@@ -206,6 +279,16 @@ export function Editor({
     applyElements(clearStep(latestElements.current, selectedIds))
   }
 
+  const handleTimelineSelect = (elementId: string) => {
+    setSelectedIds([elementId])
+    api?.updateScene({
+      appState: {
+        selectedElementIds: { [elementId]: true },
+        selectedGroupIds: {},
+      },
+    })
+  }
+
   const handlePresent = () => {
     const currentElements = api?.getSceneElements() ?? latestElements.current
     const currentAppState = api?.getAppState() ?? latestAppState.current
@@ -260,6 +343,43 @@ export function Editor({
       files: { ...currentFiles },
       frameId: activeFrame?.id ?? null,
     })
+  }
+
+  const getExportSnapshot = (range: ExportRange) => {
+    const currentElements = api?.getSceneElements() ?? latestElements.current
+    const currentAppState = api?.getAppState() ?? latestAppState.current
+    let includedIds: Set<string> | undefined
+    if (range === 'selection' && selectedIds.length) {
+      includedIds = getSelectionClosure(currentElements, selectedIds)
+    } else if (range === 'scene') {
+      const frame = currentElements.find(
+        (element) =>
+          !element.isDeleted &&
+          element.type === 'frame' &&
+          selectedIds.includes(element.id),
+      ) ?? currentElements.find(
+        (element) => !element.isDeleted && element.type === 'frame',
+      )
+      if (frame) {
+        includedIds = getSelectionClosure(
+          currentElements,
+          currentElements
+            .filter((element) => element.id === frame.id || element.frameId === frame.id)
+            .map((element) => element.id),
+        )
+      }
+    }
+    const elements = currentElements.filter(
+      (element) => !element.isDeleted && (!includedIds || includedIds.has(element.id)),
+    )
+    return {
+      elements,
+      appState: currentAppState,
+      files: filterReferencedFiles(
+        elements,
+        api?.getFiles() ?? latestFiles.current,
+      ),
+    }
   }
 
   const handleAddFrame = () => {
@@ -495,19 +615,7 @@ export function Editor({
           updateSelection(appState)
           setStepCount(getStepCount(elements))
           if (onSnapshotChange) {
-            const selectedIds = Object.keys(appState.selectedElementIds)
-              .filter((id) => appState.selectedElementIds[id])
-              .sort()
-              .join(',')
-            const sceneKey = [
-              ...elements.map(
-                (element) =>
-                  `${element.id}:${element.version}:${element.versionNonce}:${element.isDeleted ? 1 : 0}`,
-              ),
-              `selected=${selectedIds}`,
-              `viewport=${appState.scrollX},${appState.scrollY},${appState.zoom.value}`,
-              `files=${Object.keys(files).sort().join(',')}`,
-            ].join('|')
+            const sceneKey = getPersistedSceneKey(elements, appState, files)
             if (sceneKey !== lastReportedScene.current) {
               lastReportedScene.current = sceneKey
               const frameId =
@@ -547,8 +655,10 @@ export function Editor({
       </div>
 
       {sequence.length ? (
-        <aside className="sequence-panel" aria-label="Reveal sequence">
-          <strong>Sequence</strong>
+        <SequencePanel
+          collapsed={sequenceCollapsed}
+          onCollapsedChange={setSequenceCollapsed}
+        >
           <div className="sequence-list">
             {sequence.map((row) => (
               <button
@@ -565,7 +675,7 @@ export function Editor({
               </button>
             ))}
           </div>
-        </aside>
+        </SequencePanel>
       ) : null}
 
       {showAssetTools ? (
@@ -578,7 +688,7 @@ export function Editor({
         >
           Assets {assetsOpen ? '−' : '+'}
         </button>
-        {assetsOpen ? (
+      {assetsOpen ? (
           <div className="assets-content">
             <button
               type="button"
@@ -645,9 +755,28 @@ export function Editor({
         </aside>
       ) : null}
 
+      {timelineOpen ? (
+        <TimelinePanel
+          elements={liveElements}
+          selectedIds={selectedIds}
+          onChange={applyElements}
+          onSelect={handleTimelineSelect}
+        />
+      ) : null}
+
+      {exportOpen ? (
+        <ExportPanel
+          getSnapshot={getExportSnapshot}
+          onClose={() => setExportOpen(false)}
+        />
+      ) : null}
+
       <DraggableControllerBar
         className="animation-toolbar"
         ariaLabel="Animation controls"
+        collapsed={controllerCollapsed}
+        leftInset={controllerLeftInset}
+        onCollapsedChange={setControllerCollapsed}
         placement={controllerPlacement}
       >
         <div className="toolbar-stat">
@@ -712,8 +841,22 @@ export function Editor({
         <button type="button" onClick={handleAddFrame}>
           Add 16:9 frame
         </button>
+        <button
+          type="button"
+          aria-pressed={timelineOpen}
+          onClick={() => setTimelineOpen((value) => !value)}
+        >
+          Timeline
+        </button>
         <button type="button" onClick={handleSave}>
           Save
+        </button>
+        <button
+          type="button"
+          aria-pressed={exportOpen}
+          onClick={() => setExportOpen((value) => !value)}
+        >
+          Export
         </button>
         <button type="button" onClick={() => fileInput.current?.click()}>
           Open

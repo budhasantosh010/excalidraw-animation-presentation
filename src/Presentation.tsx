@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Excalidraw, newElementWith } from '@excalidraw/excalidraw'
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
-import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
+import type { AppState, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import {
   bumpAnimationElementVersion,
   compileAtStep,
@@ -19,6 +19,15 @@ import {
   DraggableControllerBar,
 } from './DraggableControllerBar'
 import type { ControllerPlacement } from './controllerPosition'
+import {
+  compileTimeline,
+  getElementsAtTimelineTime,
+  getAnimationDefinition,
+  getTimelineScenes,
+  getTimelineStepDuration,
+  sampleSceneCamera,
+  sampleTimelineElement,
+} from './timeline'
 
 type PresentationProps = {
   controllerPlacement: ControllerPlacement
@@ -51,10 +60,26 @@ export function Presentation({
   const [playbackSpeed, setPlaybackSpeed] = useState(
     initialPlaybackState?.playbackSpeed ?? 1,
   )
+  const [scrubTimeMs, setScrubTimeMs] = useState<number | null>(null)
   const animationFrame = useRef<number | null>(null)
   const previousStep = useRef(0)
   const renderedById = useRef(new Map<string, ExcalidrawElement>())
   const stepCount = useMemo(() => getStepCount(snapshot.elements), [snapshot])
+  const timeline = useMemo(() => compileTimeline(snapshot.elements), [snapshot])
+  const timelineClips = useMemo(
+    () => new Map(timeline.clips.map((clip) => [clip.elementId, clip])),
+    [timeline],
+  )
+  const activeScene = useMemo(
+    () => getTimelineScenes(snapshot.elements).find(
+      (scene) => scene.frameId === snapshot.frameId,
+    ),
+    [snapshot],
+  )
+  const currentStepDuration = useMemo(
+    () => getTimelineStepDuration(timeline, currentStep),
+    [currentStep, timeline],
+  )
 
   useEffect(() => {
     onPlaybackStateChange?.({
@@ -110,12 +135,14 @@ export function Presentation({
     }
     if (!stepCount) return
     if (currentStep >= stepCount) goToStep(0)
+    setScrubTimeMs(null)
     setIsPlaying(true)
   }, [currentStep, goToStep, isPlaying, stepCount])
 
   const moveManually = useCallback(
     (nextStep: number) => {
       setIsPlaying(false)
+      setScrubTimeMs(null)
       goToStep(nextStep)
     },
     [goToStep],
@@ -128,12 +155,17 @@ export function Presentation({
       return
     }
 
-    const delay = currentStep === 0 ? 140 : getAutoplayIntervalMs(playbackSpeed)
+    const delay = currentStep === 0
+      ? 140
+      : Math.max(
+          getAutoplayIntervalMs(playbackSpeed),
+          currentStepDuration / playbackSpeed + 80,
+        )
     const timer = window.setTimeout(() => {
       setCurrentStep((value) => Math.min(stepCount, value + 1))
     }, delay)
     return () => window.clearTimeout(timer)
-  }, [currentStep, isPlaying, playbackSpeed, stepCount])
+  }, [currentStep, currentStepDuration, isPlaying, playbackSpeed, stepCount])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -194,11 +226,31 @@ export function Presentation({
       animationFrame.current = null
     }
 
+    if (scrubTimeMs !== null) {
+      const camera = activeScene
+        ? sampleSceneCamera(activeScene, scrubTimeMs)
+        : undefined
+      api.updateScene({
+        elements: getElementsAtTimelineTime(snapshot.elements, scrubTimeMs),
+        appState: camera
+          ? {
+              scrollX: camera.scrollX,
+              scrollY: camera.scrollY,
+              zoom: {
+                value: camera.zoom as AppState['zoom']['value'],
+              },
+            }
+          : undefined,
+      })
+      return
+    }
+
     const isForward = currentStep > previousStep.current
     const animatedIds = new Set(
       baseElements
         .filter((element) => {
           const animation = getElementAnimation(element)
+          if (animation?.version === 2) return animation.step === currentStep
           return (
             animation?.step === currentStep &&
             resolveAnimationEffect(element, animation.effect) !== 'appear'
@@ -207,8 +259,25 @@ export function Presentation({
         .map((element) => element.id),
     )
 
-    const preparedElements = baseElements.map((element) => {
+    const stepBaseMs = (Math.max(1, currentStep) - 1) * 900
+    const preparedElements = baseElements.flatMap((element) => {
       let prepared = renderedById.current.get(element.id) ?? element
+      const definition = getAnimationDefinition(element)
+      const clip = timelineClips.get(element.id)
+      if (definition?.version === 2 && clip) {
+        const sampled = sampleTimelineElement(
+          element,
+          clip,
+          clip.step < currentStep ? clip.endMs : stepBaseMs,
+        )
+        if (!sampled.visible) return []
+        prepared = newElementWith(
+          prepared,
+          sampled.changes as Partial<ExcalidrawElement>,
+        )
+        renderedById.current.set(element.id, prepared)
+        return [prepared]
+      }
       const settledChanges = getSettledAnimationFrameChanges(
         element,
         currentStep,
@@ -233,43 +302,71 @@ export function Presentation({
         }
       }
       renderedById.current.set(element.id, prepared)
-      return prepared
+      return [prepared]
     })
 
     previousStep.current = currentStep
 
     api.updateScene({ elements: preparedElements })
 
-    if (!isForward || !animatedIds.size) {
+    if (!isForward || (!animatedIds.size && !activeScene?.camera.length)) {
       return
     }
 
     const startedAt = performance.now()
-    const duration = ENTRY_ANIMATION_DURATION_MS / playbackSpeed
+    const duration = Math.max(
+      ENTRY_ANIMATION_DURATION_MS,
+      currentStepDuration,
+    ) / playbackSpeed
     const drawFrame = (now: number) => {
       const progress = Math.min(1, (now - startedAt) / duration)
       const easedProgress = 1 - (1 - progress) ** 3
-      const frameElements = baseElements.map((baseElement) => {
+      const timelineTime = stepBaseMs + (now - startedAt) * playbackSpeed
+      const frameElements = baseElements.flatMap((baseElement) => {
         const previous = renderedById.current.get(baseElement.id) ?? baseElement
         if (!animatedIds.has(baseElement.id)) {
-          return bumpAnimationElementVersion(previous)
+          return [bumpAnimationElementVersion(previous)]
         }
         const animation = getElementAnimation(baseElement)
-        if (!animation) return previous
+        if (!animation) return [previous]
+        const definition = getAnimationDefinition(baseElement)
+        const clip = timelineClips.get(baseElement.id)
+        if (definition?.version === 2 && clip) {
+          const sampled = sampleTimelineElement(baseElement, clip, timelineTime)
+          if (!sampled.visible) return []
+          return [newElementWith(
+            previous,
+            sampled.changes as Partial<ExcalidrawElement>,
+          )]
+        }
         const changes = getAnimationFrameChanges(
           baseElement,
           animation.effect,
           easedProgress,
         )
-        return newElementWith(
+        return [newElementWith(
           previous,
           changes as Partial<ExcalidrawElement>,
-        )
+        )]
       })
       for (const element of frameElements) {
         renderedById.current.set(element.id, element)
       }
-      api.updateScene({ elements: frameElements })
+      const camera = activeScene
+        ? sampleSceneCamera(activeScene, timelineTime)
+        : undefined
+      api.updateScene({
+        elements: frameElements,
+        appState: camera
+          ? {
+              scrollX: camera.scrollX,
+              scrollY: camera.scrollY,
+              zoom: {
+                value: camera.zoom as AppState['zoom']['value'],
+              },
+            }
+          : undefined,
+      })
 
       if (progress < 1) {
         animationFrame.current = requestAnimationFrame(drawFrame)
@@ -285,7 +382,17 @@ export function Presentation({
         animationFrame.current = null
       }
     }
-  }, [api, baseElements, currentStep, playbackSpeed])
+  }, [
+    api,
+    activeScene,
+    baseElements,
+    currentStep,
+    currentStepDuration,
+    playbackSpeed,
+    scrubTimeMs,
+    snapshot.elements,
+    timelineClips,
+  ])
 
   useEffect(() => {
     if (!api) return
@@ -382,6 +489,29 @@ export function Presentation({
         <button type="button" onClick={handleExit}>
           Exit
         </button>
+        <label className="timeline-scrubber">
+          <span className="visually-hidden">Timeline position</span>
+          <input
+            aria-label="Timeline position"
+            type="range"
+            min="0"
+            max={Math.max(1, timeline.durationMs)}
+            step="10"
+            value={scrubTimeMs ?? Math.min(
+              timeline.durationMs,
+              Math.max(0, currentStep - 1) * 900,
+            )}
+            onChange={(event) => {
+              const timeMs = Number(event.target.value)
+              setIsPlaying(false)
+              setScrubTimeMs(timeMs)
+              const activeClip = [...timeline.clips]
+                .reverse()
+                .find((clip) => clip.startMs <= timeMs)
+              setCurrentStep(activeClip?.step ?? 0)
+            }}
+          />
+        </label>
       </DraggableControllerBar>
     </main>
   )

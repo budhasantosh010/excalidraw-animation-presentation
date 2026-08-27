@@ -342,4 +342,28 @@ describe('animation scene compiler', () => {
       effect: 'fade',
     })
   })
+
+  it('keeps version 2 timed elements visible to the legacy step player', () => {
+    const timed = {
+      ...element('timed'),
+      customData: {
+        sanverseAnimation: {
+          version: 2,
+          sceneId: 'scene-a',
+          step: 2,
+          effect: 'fade',
+          timing: {
+            durationMs: 900,
+            delayMs: 100,
+            easing: 'linear',
+            phase: 'entrance',
+          },
+        },
+      },
+    } as ExcalidrawElement
+
+    expect(getElementAnimation(timed)).toMatchObject({ version: 2, step: 2 })
+    expect(compileAtStep([timed], 1)).toHaveLength(0)
+    expect(compileAtStep([timed], 2)).toHaveLength(1)
+  })
 })

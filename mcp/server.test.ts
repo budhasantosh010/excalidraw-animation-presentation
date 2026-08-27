@@ -223,6 +223,11 @@ describe('lean animation MCP', () => {
         },
       )
     }
+    const reviseTool = tools.tools.find((tool) => tool.name === 'revise_animation')
+    expect(
+      (reviseTool?.inputSchema.properties?.projectAction as Record<string, any>)
+        ?.properties?.action?.enum,
+    ).toEqual(['rename', 'duplicate', 'trash', 'restore', 'restore-revision'])
 
     const resources = await client.listResources()
     expect(resources.resources).toEqual(
@@ -289,10 +294,11 @@ describe('lean animation MCP', () => {
 
     const createResult = await client.callTool({
         name: 'create_animation',
-        arguments: { storyboard },
+        arguments: { storyboard, saveToWorkspace: true },
       })
     const created = textResult(createResult)
     const filename = String(created.filename)
+    const projectId = String(created.projectId)
     const document = JSON.parse(
       await readFile(join(outputDir, filename), 'utf8'),
     ) as {
@@ -312,6 +318,7 @@ describe('lean animation MCP', () => {
       validationStatus: 'valid',
       uiResourceUri: UI_RESOURCE_URI,
       uiResourceAttached: true,
+      projectId: expect.stringMatching(/^prj_/),
     })
     expect(createResult.structuredContent).toMatchObject(created)
     expect(createResult._meta).toMatchObject({
@@ -349,6 +356,44 @@ describe('lean animation MCP', () => {
     expect(byId.flow.customData.sanverseAnimation.effect).toBe('draw')
     expect(byId.output.customData.sanverseAnimation.step).toBe(3)
     expect(byId.output.customData.sanverseAnimation.effect).toBe('fade')
+
+    const listed = textResult(await client.callTool({
+      name: 'list_animations',
+      arguments: { query: 'lean mcp' },
+    }))
+    expect(listed.projects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ projectId, currentRevision: 1 }),
+    ]))
+
+    const revisedResult = await client.callTool({
+      name: 'revise_animation',
+      arguments: {
+        projectId,
+        expectedRevision: 1,
+        operations: [{ type: 'move_element', elementId: 'input', x: 333, y: 222 }],
+      },
+    })
+    expect(textResult(revisedResult)).toMatchObject({ projectId, revision: 2 })
+    expect(revisedResult._meta).toMatchObject({
+      projectSnapshot: {
+        elements: expect.arrayContaining([
+          expect.objectContaining({ id: 'input', x: 333, y: 222 }),
+        ]),
+      },
+    })
+
+    const oldRevision = await client.callTool({
+      name: 'open_animation_studio',
+      arguments: { projectId, revision: 1 },
+    })
+    expect(textResult(oldRevision)).toMatchObject({ projectId, revision: 1 })
+    expect(oldRevision._meta).toMatchObject({
+      projectSnapshot: {
+        elements: expect.arrayContaining([
+          expect.objectContaining({ id: 'input', x: 120 }),
+        ]),
+      },
+    })
   })
 
   it('rejects output path traversal', async () => {

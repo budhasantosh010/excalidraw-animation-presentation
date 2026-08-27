@@ -6,6 +6,10 @@ import {
   getElementAnimation,
   MAX_ANIMATION_STEP,
 } from '../src/animation.ts'
+import {
+  updateAnimationDefinition,
+  updateSceneDefinition,
+} from '../src/timeline.ts'
 
 export type AnimationEffect = 'auto' | 'appear' | 'fade' | 'pop' | 'draw'
 
@@ -303,13 +307,17 @@ export const validateAnimationDocument = (document: unknown) => {
   for (const element of candidate.elements) {
     if (!element.id || ids.has(element.id)) errors.push(`Duplicate or missing id: ${element.id}`)
     ids.add(element.id)
+    if (element.isDeleted) continue
     if (element.type === 'frame') {
       if (element.width !== 1600 || element.height !== 900) {
         errors.push(`Frame ${element.id} must be 1600x900.`)
       }
       continue
     }
-    if (!getElementAnimation(element as never)) {
+    if (
+      element.customData?.sanverseAnimation !== undefined &&
+      !getElementAnimation(element as never)
+    ) {
       errors.push(`Invalid animation metadata: ${element.id}`)
     }
   }
@@ -417,46 +425,220 @@ export const readAnimationFile = async (outputDir: string, filename: string) => 
   return JSON.parse(await readFile(target, 'utf8')) as ExcalidrawDocument
 }
 
-export const reviseAnimationFile = async (
-  outputDir: string,
-  filename: string,
-  operations: Array<Record<string, unknown>>,
+const editableFields = new Set([
+  'x', 'y', 'width', 'height', 'angle', 'strokeColor', 'backgroundColor',
+  'fillStyle', 'strokeWidth', 'strokeStyle', 'roughness', 'opacity', 'locked',
+  'text', 'fontSize', 'fontFamily', 'textAlign', 'verticalAlign',
+])
+
+const requireElement = (
+  byId: Map<string, ExcalidrawElement>,
+  operation: Record<string, unknown>,
 ) => {
-  const document = await readAnimationFile(outputDir, filename)
-  const byId = new Map(document.elements.map((element) => [element.id, element]))
+  const id = String(operation.elementId ?? '')
+  const element = byId.get(id)
+  if (!element) throw new Error(`Element not found: ${id}`)
+  return element
+}
+
+const bumpElement = (element: ExcalidrawElement) => {
+  element.version = Number(element.version ?? 0) + 1
+  element.versionNonce = seedFor(`${element.id}:${element.version}:${Date.now()}`)
+  element.updated = Date.now()
+}
+
+const validateEditablePatch = (patch: Record<string, unknown>) => {
+  for (const [key, value] of Object.entries(patch)) {
+    if (!editableFields.has(key)) throw new Error(`Unsupported element field: ${key}`)
+    if (['x', 'y', 'width', 'height', 'angle', 'strokeWidth', 'roughness', 'opacity', 'fontSize', 'fontFamily'].includes(key)) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error(`Invalid ${key}.`)
+      }
+    }
+    if ((key === 'width' || key === 'height') && Number(value) < 0) {
+      throw new Error(`Invalid ${key}.`)
+    }
+    if (key === 'opacity' && (Number(value) < 0 || Number(value) > 100)) {
+      throw new Error('Invalid opacity; expected 0 to 100.')
+    }
+    if (['strokeColor', 'backgroundColor', 'fillStyle', 'strokeStyle', 'textAlign', 'verticalAlign', 'text'].includes(key) && typeof value !== 'string') {
+      throw new Error(`Invalid ${key}.`)
+    }
+    if (key === 'locked' && typeof value !== 'boolean') throw new Error('Invalid locked.')
+  }
+}
+
+export const applyRevisionOperations = (
+  source: ExcalidrawDocument,
+  operations: Array<Record<string, unknown>>,
+): ExcalidrawDocument => {
+  const document = structuredClone(source)
+  let byId = new Map(document.elements.map((element) => [element.id, element]))
   for (const operation of operations) {
-    const element = byId.get(String(operation.elementId ?? ''))
-    if (!element) throw new Error(`Element not found: ${operation.elementId}`)
-    if (operation.type === 'change_text' && element.type === 'text') {
+    const type = String(operation.type ?? '')
+    if (type === 'add_element') {
+      const input = structuredClone(operation.element)
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        throw new Error('add_element requires an element object.')
+      }
+      const element = input as ExcalidrawElement
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(element.id ?? '')) || byId.has(element.id)) {
+        throw new Error(`Invalid or duplicate element id: ${element.id}`)
+      }
+      document.elements.push(element)
+      byId.set(element.id, element)
+      continue
+    }
+
+    const element = requireElement(byId, operation)
+    if (type === 'change_text' && element.type === 'text') {
       element.text = String(operation.text ?? '')
       element.rawText = element.text
       element.originalText = element.text
-    } else if (operation.type === 'set_animation_step') {
+    } else if (type === 'set_animation_step') {
       const step = Number(operation.step)
       if (!Number.isSafeInteger(step) || step < 1 || step > MAX_ANIMATION_STEP) {
         throw new Error('Invalid animation step.')
       }
       element.customData.sanverseAnimation.step = step
-    } else if (operation.type === 'set_animation_effect') {
+    } else if (type === 'set_animation_effect') {
       const effect = String(operation.effect) as AnimationEffect
       if (!effects.has(effect)) throw new Error('Invalid animation effect.')
       element.customData.sanverseAnimation.effect = effect
-    } else if (operation.type === 'move_element') {
+    } else if (type === 'set_animation_timing') {
+      document.elements = updateAnimationDefinition(
+        document.elements as never,
+        [element.id],
+        {
+          durationMs: Number(operation.durationMs),
+          delayMs: Number(operation.delayMs ?? 0),
+          easing: operation.easing as never,
+          phase: operation.phase as never,
+          transform: operation.transform as never,
+        },
+      ) as unknown as ExcalidrawElement[]
+      byId = new Map(document.elements.map((item) => [item.id, item]))
+      continue
+    } else if (type === 'set_animation_group') {
+      document.elements = updateAnimationDefinition(
+        document.elements as never,
+        [element.id],
+        {
+          group: operation.groupId
+            ? {
+                id: String(operation.groupId),
+                order: Number(operation.order ?? 0),
+                intervalMs: Number(operation.intervalMs ?? 0),
+                direction: operation.direction === 'reverse' ? 'reverse' : 'forward',
+              }
+            : null,
+        },
+      ) as unknown as ExcalidrawElement[]
+      byId = new Map(document.elements.map((item) => [item.id, item]))
+      continue
+    } else if (type === 'clear_animation') {
+      if (element.customData) delete element.customData.sanverseAnimation
+    } else if (type === 'set_scene' && element.type === 'frame') {
+      document.elements = updateSceneDefinition(
+        document.elements as never,
+        element.id,
+        {
+          name: operation.name === undefined ? undefined : String(operation.name),
+          order: operation.order === undefined ? undefined : Number(operation.order),
+          durationMs: operation.durationMs === undefined
+            ? undefined
+            : Number(operation.durationMs),
+        },
+      ) as unknown as ExcalidrawElement[]
+      byId = new Map(document.elements.map((item) => [item.id, item]))
+      continue
+    } else if (type === 'set_camera_track' && element.type === 'frame') {
+      document.elements = updateSceneDefinition(
+        document.elements as never,
+        element.id,
+        { camera: operation.camera as never },
+      ) as unknown as ExcalidrawElement[]
+      byId = new Map(document.elements.map((item) => [item.id, item]))
+      continue
+    } else if (type === 'move_element') {
       const x = Number(operation.x)
       const y = Number(operation.y)
       if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Invalid position.')
       element.x = x
       element.y = y
+    } else if (type === 'update_element') {
+      if (!operation.patch || typeof operation.patch !== 'object' || Array.isArray(operation.patch)) {
+        throw new Error('update_element requires a patch object.')
+      }
+      const editable = operation.patch as Record<string, unknown>
+      validateEditablePatch(editable)
+      Object.assign(element, editable)
+      if (element.type === 'text' && Object.hasOwn(editable, 'text')) {
+        element.rawText = element.text
+        element.originalText = element.text
+      }
+    } else if (type === 'duplicate_element') {
+      const newId = String(operation.newElementId ?? '')
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(newId) || byId.has(newId)) {
+        throw new Error(`Invalid or duplicate element id: ${newId}`)
+      }
+      const duplicate = structuredClone(element)
+      duplicate.id = newId
+      duplicate.x = Number.isFinite(operation.x) ? Number(operation.x) : Number(element.x) + 40
+      duplicate.y = Number.isFinite(operation.y) ? Number(operation.y) : Number(element.y) + 40
+      duplicate.boundElements = null
+      bumpElement(duplicate)
+      document.elements.push(duplicate)
+      byId.set(newId, duplicate)
+      continue
+    } else if (type === 'delete_element') {
+      element.isDeleted = true
+    } else if (type === 'reorder_element') {
+      const index = Math.max(0, Math.min(document.elements.length - 1, Math.trunc(Number(operation.index))))
+      if (!Number.isFinite(index)) throw new Error('Invalid reorder index.')
+      document.elements = document.elements.filter((item) => item.id !== element.id)
+      document.elements.splice(index, 0, element)
+      byId = new Map(document.elements.map((item) => [item.id, item]))
+      bumpElement(element)
+      continue
+    } else if (type === 'set_bindings' && (element.type === 'arrow' || element.type === 'line')) {
+      for (const side of ['start', 'end'] as const) {
+        const targetId = operation[`${side}ElementId`]
+        element[`${side}Binding`] = targetId
+          ? { elementId: String(targetId), focus: 0, gap: 8, fixedPoint: null }
+          : null
+      }
+    } else if (type === 'set_excalidraw_groups') {
+      const groupIds = operation.groupIds
+      if (!Array.isArray(groupIds) || groupIds.some((id) => typeof id !== 'string')) {
+        throw new Error('groupIds must be a string array.')
+      }
+      element.groupIds = [...groupIds]
     } else {
-      throw new Error(`Unsupported revision operation: ${operation.type}`)
+      throw new Error(`Unsupported revision operation: ${type}`)
     }
-    element.version = Number(element.version ?? 0) + 1
-    element.updated = Date.now()
+    bumpElement(element)
   }
   const validation = validateAnimationDocument(document)
   if (!validation.valid) throw new Error(validation.errors.join(' '))
+  return document
+}
+
+export const reviseAnimationFile = async (
+  outputDir: string,
+  filename: string,
+  operations: Array<Record<string, unknown>>,
+) => {
+  const document = applyRevisionOperations(
+    await readAnimationFile(outputDir, filename),
+    operations,
+  )
   await atomicJsonWrite(safeOutputPath(outputDir, filename), document)
-  return { status: 'revised', filename, operationsApplied: operations.length }
+  return {
+    status: 'revised',
+    ...summarizeAnimationDocument(filename, document),
+    operationsApplied: operations.length,
+  }
 }
 
 export const listAnimationFiles = async (outputDir: string) => {

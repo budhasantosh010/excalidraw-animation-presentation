@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "workspaceId": "ws_00000000000000000000000000000001",
+  "projectId": "prj_00000000000000000000000000000003",
+  "name": "MCP generated animation",
+  "revision": { "id": "rev_00000000000000000000000000000003", "number": 1, "source": "mcp", "label": null, "createdAt": "2026-01-01T00:00:00.000Z" },
+  "trash": { "state": "active" },
+  "assetHashes": [],
+  "extension": { "version": 1, "fixtureKind": "mcp" },
+  "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z",
+  "snapshot": {
+    "type": "excalidraw", "version": 2, "source": "local",
+    "elements": [
+      { "id": "frame-mcp", "type": "frame", "x": 0, "y": 0, "width": 1600, "height": 900, "angle": 0, "opacity": 100, "seed": 301, "version": 1, "versionNonce": 401, "updated": 1, "locked": false, "isDeleted": false, "groupIds": [], "frameId": null },
+      { "id": "mcp-title", "type": "text", "x": 120, "y": 120, "width": 400, "height": 50, "angle": 0, "opacity": 100, "seed": 302, "version": 1, "versionNonce": 402, "updated": 1, "locked": false, "isDeleted": false, "groupIds": [], "frameId": "frame-mcp", "text": "Sanitized MCP fixture", "customData": { "sanverseAnimation": { "version": 1, "sceneId": "scene-mcp", "step": 1, "effect": "fade" } } },
+      { "id": "mcp-shape", "type": "ellipse", "x": 160, "y": 260, "width": 240, "height": 160, "angle": 0, "opacity": 100, "seed": 303, "version": 1, "versionNonce": 403, "updated": 1, "locked": false, "isDeleted": false, "groupIds": [], "frameId": "frame-mcp", "customData": { "sanverseAnimation": { "version": 1, "sceneId": "scene-mcp", "step": 2, "effect": "appear" } } },
+      { "id": "mcp-line", "type": "line", "x": 400, "y": 340, "width": 260, "height": 0, "angle": 0, "opacity": 100, "seed": 304, "version": 1, "versionNonce": 404, "updated": 1, "locked": false, "isDeleted": false, "groupIds": [], "frameId": "frame-mcp", "points": [[0, 0], [260, 0]], "customData": { "sanverseAnimation": { "version": 1, "sceneId": "scene-mcp", "step": 3, "effect": "auto" } } }
+    ],
+    "appState": { "viewBackgroundColor": "#ffffff", "gridSize": null }, "files": {}
+  }
+}
