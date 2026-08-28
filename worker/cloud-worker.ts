@@ -40,6 +40,13 @@ export const createCloudWorker = ({
       })
     }
 
+    if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+      return Response.json(
+        { error: 'Online workspaces are stored in the browser, not a public server API.' },
+        { status: 404 },
+      )
+    }
+
     if (url.pathname.startsWith('/mcp/')) {
       if (!validSecret(env.ANIMATION_MCP_SECRET ?? '')) {
         return Response.json(

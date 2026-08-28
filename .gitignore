@@ -20,6 +20,9 @@ dist-ssr
 .env
 outputs/mcp-animations/
 
+# Local durable project data (database, assets, migration backups, recovery)
+/.sanverse-animation-data/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

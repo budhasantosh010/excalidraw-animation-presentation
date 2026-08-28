@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "workspaceId": "ws_00000000000000000000000000000001",
+  "projectId": "prj_00000000000000000000000000000002",
+  "name": "Independent connected steps",
+  "revision": { "id": "rev_00000000000000000000000000000002", "number": 1, "source": "manual", "label": "Connected elements", "createdAt": "2026-01-01T00:00:00.000Z" },
+  "trash": { "state": "active" },
+  "assetHashes": [],
+  "extension": { "version": 1, "fixtureKind": "v1-connected" },
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "snapshot": {
+    "type": "excalidraw", "version": 2, "source": "local",
+    "elements": [
+      { "id": "connected-box", "type": "rectangle", "x": 100, "y": 100, "width": 220, "height": 100, "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent", "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1, "opacity": 100, "groupIds": [], "frameId": null, "index": "a0", "roundness": { "type": 3 }, "seed": 102, "version": 1, "versionNonce": 202, "isDeleted": false, "boundElements": [{ "id": "connected-arrow", "type": "arrow" }], "updated": 1, "link": null, "locked": false, "customData": { "sanverseAnimation": { "version": 1, "sceneId": "scene-connected", "step": 1, "effect": "pop" } } },
+      { "id": "connected-arrow", "type": "arrow", "x": 320, "y": 150, "width": 180, "height": 0, "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent", "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1, "opacity": 100, "groupIds": [], "frameId": null, "index": "a1", "roundness": { "type": 2 }, "seed": 103, "version": 1, "versionNonce": 203, "isDeleted": false, "boundElements": null, "updated": 1, "link": null, "locked": false, "points": [[0, 0], [180, 0]], "startBinding": { "elementId": "connected-box", "focus": 0, "gap": 8, "fixedPoint": null }, "endBinding": null, "startArrowhead": null, "endArrowhead": "arrow", "elbowed": false, "customData": { "sanverseAnimation": { "version": 1, "sceneId": "scene-connected", "step": 2, "effect": "draw" } } }
+    ],
+    "appState": { "viewBackgroundColor": "#ffffff", "gridSize": null }, "files": {}
+  }
+}

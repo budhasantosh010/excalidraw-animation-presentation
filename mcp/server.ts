@@ -28,6 +28,19 @@ import {
   UI_RESOURCE_URI,
   type McpAppBuild,
 } from './ui-assets.ts'
+import { createProjectControl, type ProjectControl } from './project-control.ts'
+import {
+  buildCreationReceipt,
+  buildMutationReceipt,
+  buildProjectActionReceipt,
+  buildProjectIndex,
+} from './project-index.ts'
+import {
+  projectActionSchema,
+  projectInspectionShape,
+  revisionOperationSchema,
+  storyboardSchema,
+} from './tool-contracts.ts'
 
 export type AnimationMcpConfig = {
   host: '127.0.0.1'
@@ -36,6 +49,11 @@ export type AnimationMcpConfig = {
   outputDir: string
   allowedHosts: string[]
   publicOrigin: string
+  workspaceDataRoot?: string
+  buildIdentity?: {
+    gitSha?: string
+    buildTime?: string
+  }
 }
 
 const allowedOrigins = new Set([
@@ -113,9 +131,10 @@ const jsonResult = (value: unknown) => ({
 const appProjectResult = (
   summary: Record<string, unknown> & { filename: string; revision: number },
   projectSnapshot: ExcalidrawDocument,
+  additions: Record<string, unknown> = {},
 ) => ({
-  ...jsonResult(summary),
-  structuredContent: summary,
+  ...jsonResult({ ...summary, ...additions }),
+  structuredContent: { ...summary, ...additions },
   _meta: {
     filename: summary.filename,
     revision: summary.revision,
@@ -127,6 +146,7 @@ const appProjectResult = (
 const createToolServer = (
   config: AnimationMcpConfig,
   uiBuild: McpAppBuild,
+  projectControl: ProjectControl,
 ) => {
   const server = new McpServer({
     name: 'sanverse-excalidraw-animation',
@@ -180,7 +200,50 @@ const createToolServer = (
         outputFormat: '.excalidraw',
         effects: ['auto', 'appear', 'fade', 'pop', 'draw'],
         controlsOpenBrowser: false,
-        exportsVideo: false,
+        exportsVideo: 'browser-dependent',
+        exportFormats: ['excalidraw', 'json', 'png', 'svg', 'webm', 'mp4-when-supported'],
+        durableProjects: true,
+        optimisticRevisionControl: true,
+        build: {
+          gitSha: config.buildIdentity?.gitSha || 'unknown',
+          buildTime: config.buildIdentity?.buildTime || 'unknown',
+          schemaVersion: 2,
+          storageVersion: 1,
+        },
+        capabilities: {
+          persistence: {
+            workspaces: true,
+            autosave: true,
+            crashRecovery: 'browser-local-journal',
+            revisionHistory: true,
+            thumbnails: 'not-integrated',
+          },
+          animation: {
+            presets: ['auto', 'appear', 'fade', 'pop', 'draw'],
+            transforms: true,
+            easing: true,
+            stagger: true,
+            scenes: true,
+            camera: true,
+          },
+          inspection: {
+            semanticProjectIndex: true,
+            revisionBoundPagination: true,
+          },
+          export: {
+            animatedExcalidraw: true,
+            json: true,
+            png: true,
+            svg: true,
+            webm: 'browser-dependent',
+            mp4: 'browser-dependent',
+          },
+        },
+        limits: {
+          maxScenesPerStoryboard: 20,
+          maxOperationsPerRevision: 100,
+          maxInspectionElementsPerPage: 200,
+        },
         tools: [
           'get_animation_status',
           'create_animation',
@@ -201,14 +264,16 @@ const createToolServer = (
       description:
         'Create one animated Excalidraw file from a structured storyboard.',
       inputSchema: {
-        storyboard: z.record(z.any()),
+        storyboard: storyboardSchema,
         filename: z.string().optional(),
+        saveToWorkspace: z.boolean().optional(),
+        workspaceId: z.string().optional(),
       },
       _meta: {
         ui: { resourceUri: UI_RESOURCE_URI },
       },
     },
-    async ({ storyboard, filename }) => {
+    async ({ storyboard, filename, saveToWorkspace, workspaceId }) => {
       const created = await createAnimationFile(
         config.outputDir,
         storyboard,
@@ -223,48 +288,214 @@ const createToolServer = (
         uiResourceUri: UI_RESOURCE_URI,
         uiResourceAttached: true,
       }
-      return appProjectResult(summary, projectSnapshot)
+      if (saveToWorkspace) {
+        const project = projectControl.create({
+          name: typeof storyboard.projectName === 'string'
+            ? storyboard.projectName
+            : created.filename,
+          snapshot: projectSnapshot,
+          workspaceId,
+        })
+        Object.assign(summary, {
+          workspaceId: project.workspaceId,
+          projectId: project.projectId,
+          revision: project.revision.number,
+        })
+      }
+      const identifiedSummary = summary as typeof summary & {
+        projectId?: string
+        workspaceId?: string
+      }
+      const indexIdentity = {
+        filename: summary.filename,
+        revision: summary.revision,
+        ...(typeof identifiedSummary.projectId === 'string'
+          ? { projectId: identifiedSummary.projectId }
+          : {}),
+        ...(typeof identifiedSummary.workspaceId === 'string'
+          ? { workspaceId: identifiedSummary.workspaceId }
+          : {}),
+      }
+      return appProjectResult(summary, projectSnapshot, {
+        creationReceipt: buildCreationReceipt(projectSnapshot, indexIdentity),
+        projectIndex: buildProjectIndex(projectSnapshot, indexIdentity),
+      })
     },
   )
 
-  server.registerTool(
+  registerAppTool(
+    server,
     'revise_animation',
     {
       description:
-        'Apply small validated text, step, effect, or position changes.',
+        'Atomically revise drawing, animation, scene, camera, or durable project state.',
       inputSchema: {
-        filename: z.string(),
-        operations: z.array(z.record(z.any())).min(1).max(50),
+        filename: z.string().optional(),
+        projectId: z.string().optional(),
+        expectedRevision: z.number().int().positive().optional(),
+        operations: z.array(revisionOperationSchema).max(100).optional(),
+        projectAction: projectActionSchema.optional(),
       },
+      _meta: { ui: { resourceUri: UI_RESOURCE_URI } },
     },
-    async ({ filename, operations }) =>
-      jsonResult(
-        await reviseAnimationFile(config.outputDir, filename, operations),
-      ),
+    async ({ filename, projectId, expectedRevision, operations = [], projectAction }) => {
+      if (filename && projectId) {
+        throw new Error('filename and projectId are mutually exclusive.')
+      }
+      if (projectAction && operations.length) {
+        throw new Error('projectAction and operations are mutually exclusive.')
+      }
+      if (projectAction && !projectId) {
+        throw new Error('projectAction requires projectId.')
+      }
+      if (projectAction && expectedRevision !== undefined) {
+        throw new Error('expectedRevision is not supported with projectAction.')
+      }
+      if (!projectId && expectedRevision !== undefined) {
+        throw new Error('expectedRevision requires projectId.')
+      }
+      if (projectId) {
+        const before = projectControl.open({ projectId })
+        const project = projectAction
+          ? projectControl.action({
+              projectId,
+              action: projectAction.action,
+              name: projectAction.name,
+              targetWorkspaceId: projectAction.targetWorkspaceId,
+              revision: projectAction.revision,
+            })
+          : projectControl.revise({ projectId, expectedRevision, operations })
+        const snapshot = project.snapshot as ExcalidrawDocument
+        const summary = {
+          status: 'revised',
+          workspaceId: project.workspaceId,
+          projectId: project.projectId,
+          ...summarizeAnimationDocument(
+            `${project.name}.excalidraw`,
+            snapshot,
+            project.revision.number,
+          ),
+          operationsApplied: projectAction ? 0 : operations.length,
+          uiResourceUri: UI_RESOURCE_URI,
+          uiResourceAttached: true,
+        }
+        const additions = projectAction
+          ? {
+              projectActionReceipt: buildProjectActionReceipt(
+                before.snapshot as ExcalidrawDocument,
+                snapshot,
+                {
+                  action: projectAction.action,
+                  ...(projectAction.action === 'restore-revision'
+                    ? { sourceRevision: projectAction.revision }
+                    : {}),
+                  sourceProjectId: before.projectId,
+                  filename: summary.filename,
+                  name: project.name,
+                  projectId: project.projectId,
+                  workspaceId: project.workspaceId,
+                  previousRevision: before.revision.number,
+                  revision: project.revision.number,
+                },
+              ),
+            }
+          : {
+              mutationReceipt: buildMutationReceipt(
+                before.snapshot as ExcalidrawDocument,
+                snapshot,
+                operations.length,
+                {
+                  filename: summary.filename,
+                  name: project.name,
+                  projectId: project.projectId,
+                  workspaceId: project.workspaceId,
+                  previousRevision: before.revision.number,
+                  revision: project.revision.number,
+                },
+              ),
+            }
+        return appProjectResult(summary, snapshot, additions)
+      }
+      if (!filename) throw new Error('filename or projectId is required.')
+      const before = await readAnimationFile(config.outputDir, filename)
+      const previousRevision = summarizeAnimationDocument(filename, before).revision
+      const revised = await reviseAnimationFile(config.outputDir, filename, operations)
+      const snapshot = await readAnimationFile(config.outputDir, filename)
+      return appProjectResult({
+        ...revised,
+        uiResourceUri: UI_RESOURCE_URI,
+        uiResourceAttached: true,
+      }, snapshot, {
+        mutationReceipt: buildMutationReceipt(
+          before,
+          snapshot,
+          operations.length,
+          {
+            filename: revised.filename,
+            previousRevision,
+            revision: revised.revision,
+          },
+        ),
+      })
+    },
   )
 
   server.registerTool(
     'validate_animation',
     {
-      description: 'Validate one generated animation file.',
-      inputSchema: { filename: z.string() },
+      description: 'Validate an exact generated file or durable project revision.',
+      inputSchema: {
+        filename: z.string().optional(),
+        projectId: z.string().optional(),
+        revision: z.number().int().positive().optional(),
+      },
     },
-    async ({ filename }) =>
-      jsonResult(
-        validateAnimationDocument(
-          await readAnimationFile(config.outputDir, filename),
-        ),
-      ),
+    async ({ filename, projectId, revision }) => {
+      const snapshot = projectId
+        ? projectControl.open({ projectId, revision }).snapshot as ExcalidrawDocument
+        : filename
+          ? await readAnimationFile(config.outputDir, filename)
+          : undefined
+      if (!snapshot) throw new Error('filename or projectId is required.')
+      return jsonResult(validateAnimationDocument(snapshot))
+    },
   )
 
   server.registerTool(
     'list_animations',
     {
-      description: 'List generated animation filenames.',
-      inputSchema: {},
+      description: 'Find generated files and durable projects by workspace or name.',
+      inputSchema: {
+        workspaceId: z.string().optional(),
+        query: z.string().optional(),
+        includeTrashed: z.boolean().optional(),
+      },
     },
-    async () =>
-      jsonResult({ filenames: await listAnimationFiles(config.outputDir) }),
+    async ({ workspaceId, query, includeTrashed }) => {
+      const projects = projectControl.list({ workspaceId, query, includeTrashed })
+        .map((project) => {
+          const durable = projectControl.open({ projectId: project.projectId })
+          const animation = summarizeAnimationDocument(
+            `${project.name}.excalidraw`,
+            durable.snapshot as ExcalidrawDocument,
+            project.currentRevision,
+          )
+          return {
+            ...project,
+            revision: project.currentRevision,
+            trashed: project.trash.state === 'trashed',
+            sceneCount: animation.sceneCount,
+            drawableElementCount: animation.drawableElementCount,
+            animatedElementCount: animation.animatedElementCount,
+            thumbnailAvailable: false,
+          }
+        })
+      return jsonResult({
+        filenames: await listAnimationFiles(config.outputDir),
+        workspaces: projectControl.workspaces(),
+        projects,
+      })
+    },
   )
 
   registerAppTool(
@@ -274,27 +505,66 @@ const createToolServer = (
       description:
         'Open one existing animation directly in the embedded editor and player.',
       inputSchema: {
-        filename: z.string(),
+        filename: z.string().optional(),
+        projectId: z.string().optional(),
+        revision: z.number().int().positive().optional(),
+        ...projectInspectionShape,
       },
       _meta: {
         ui: { resourceUri: UI_RESOURCE_URI },
       },
     },
-    async ({ filename }) => {
-      const projectSnapshot = await readAnimationFile(
-        config.outputDir,
-        filename,
-      )
+    async ({
+      filename,
+      projectId,
+      revision,
+      sceneId,
+      elementIds,
+      query,
+      elementType,
+      animationOnly,
+      limit,
+      cursor,
+    }) => {
+      const durable = projectId
+        ? projectControl.open({ projectId, revision })
+        : undefined
+      if (!filename && !durable) throw new Error('filename or projectId is required.')
+      const projectSnapshot = durable
+        ? durable.snapshot as ExcalidrawDocument
+        : await readAnimationFile(config.outputDir, filename!)
       const validation = validateAnimationDocument(projectSnapshot)
       if (!validation.valid) throw new Error(validation.errors.join(' '))
       const summary = {
         status: 'opened',
-        ...summarizeAnimationDocument(filename, projectSnapshot),
+        ...(durable
+          ? { workspaceId: durable.workspaceId, projectId: durable.projectId }
+          : {}),
+        ...summarizeAnimationDocument(
+          durable ? `${durable.name}.excalidraw` : filename!,
+          projectSnapshot,
+          durable?.revision.number ?? 1,
+        ),
         validationStatus: 'valid',
         uiResourceUri: UI_RESOURCE_URI,
         uiResourceAttached: true,
       }
-      return appProjectResult(summary, projectSnapshot)
+      const projectIndex = buildProjectIndex(
+        projectSnapshot,
+        {
+          filename: summary.filename,
+          revision: summary.revision,
+          ...(durable
+            ? {
+                name: durable.name,
+                projectId: durable.projectId,
+                workspaceId: durable.workspaceId,
+              }
+            : {}),
+        },
+        { sceneId, elementIds, query, elementType, animationOnly, limit, cursor },
+      )
+      return appProjectResult(summary, projectSnapshot, { projectIndex })
     },
   )
 
@@ -307,6 +577,9 @@ export const startAnimationMcpServer = async (config: AnimationMcpConfig) => {
     throw new Error('Route secret must contain at least 43 URL-safe characters.')
   }
   const uiBuild = await loadMcpAppBuild(config.publicOrigin)
+  const projectControl = await createProjectControl(
+    config.workspaceDataRoot ?? resolve(config.outputDir, '.workspace'),
+  )
 
   const app = createMcpExpressApp({
     host: config.host,
@@ -350,7 +623,7 @@ export const startAnimationMcpServer = async (config: AnimationMcpConfig) => {
   })
 
   app.post(mcpPath, async (request, response) => {
-    const server = createToolServer(config, uiBuild)
+    const server = createToolServer(config, uiBuild, projectControl)
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -390,9 +663,14 @@ export const startAnimationMcpServer = async (config: AnimationMcpConfig) => {
     port,
     close: () =>
       new Promise<void>((resolveClose, reject) =>
-        httpServer.close((error) =>
-          error ? reject(error) : resolveClose(),
-        ),
+        httpServer.close((error) => {
+          if (error) {
+            reject(error)
+            return
+          }
+          projectControl.close()
+          resolveClose()
+        }),
       ),
   }
 }
@@ -413,6 +691,9 @@ if (isDirectRun) {
     .map((host) => host.trim())
     .filter(Boolean)
   const publicOrigin = process.env.MCP_PUBLIC_ORIGIN ?? ''
+  const workspaceDataRoot = resolve(
+    process.env.ANIMATION_WORKSPACE_DATA_DIR ?? '.sanverse-animation-data',
+  )
   const running = await startAnimationMcpServer({
     host: '127.0.0.1',
     port: 3002,
@@ -420,6 +701,11 @@ if (isDirectRun) {
     outputDir,
     allowedHosts,
     publicOrigin,
+    workspaceDataRoot,
+    buildIdentity: {
+      gitSha: process.env.MCP_BUILD_SHA,
+      buildTime: process.env.MCP_BUILD_TIME,
+    },
   })
   console.log(`Animation MCP listening on 127.0.0.1:${running.port}`)
 }

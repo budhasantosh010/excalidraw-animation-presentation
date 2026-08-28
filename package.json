@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.13.0 <27"
   },
   "scripts": {
     "dev": "vinext dev",
@@ -29,12 +29,14 @@
     "@imgly/background-removal": "^1.7.0",
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "1.30.0",
+    "better-sqlite3": "12.11.1",
     "express": "5.1.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
     "@types/express": "5.0.3",
     "@cloudflare/vite-plugin": "1.51.1",
     "@types/node": "22.19.19",

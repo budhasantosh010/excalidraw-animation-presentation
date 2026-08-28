@@ -4,16 +4,35 @@ import { createCloudWorker, type CloudWorkerEnv } from './cloud-worker.ts'
 import type { R2BucketLike } from '../mcp/cloud-storage.ts'
 
 class MemoryBucket implements R2BucketLike {
-  async get() {
-    return null
+  readonly objects = new Map<string, { value: string; etag: string }>()
+  private revision = 0
+
+  async get(key: string) {
+    const object = this.objects.get(key)
+    return object ? { etag: object.etag, text: async () => object.value } : null
   }
 
-  async put() {
-    return { etag: 'test' }
+  async put(
+    key: string,
+    value: string,
+    options?: { onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } },
+  ) {
+    const current = this.objects.get(key)
+    if (options?.onlyIf?.etagMatches !== undefined && current?.etag !== options.onlyIf.etagMatches) return null
+    if (options?.onlyIf?.etagDoesNotMatch === '*' && current) return null
+    const stored = { value, etag: `etag-${++this.revision}` }
+    this.objects.set(key, stored)
+    return { etag: stored.etag }
   }
 
-  async list() {
-    return { objects: [], truncated: false }
+  async list(options?: { prefix?: string }) {
+    return {
+      objects: [...this.objects.keys()]
+        .filter((key) => key.startsWith(options?.prefix ?? ''))
+        .sort()
+        .map((key) => ({ key })),
+      truncated: false,
+    }
   }
 }
 
@@ -87,6 +106,18 @@ describe('Sites cloud worker routing', () => {
     )
 
     expect(response.status).toBe(503)
+  })
+
+  it('does not expose anonymous server-side workspace storage', async () => {
+    const response = await worker.fetch(
+      new Request('https://animation.example.com/api/bootstrap'),
+      environment(),
+      context(),
+    )
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringMatching(/browser/i),
+    })
   })
 
   it('hides incorrect MCP routes and accepts the configured secret route', async () => {

@@ -9,23 +9,35 @@ const UI_RESOURCE_URI = 'ui://sanverse/animation-studio-v4.html'
 const PUBLIC_ORIGIN = 'https://sanverse-animation.example.com'
 
 class MemoryBucket implements R2BucketLike {
-  readonly objects = new Map<string, string>()
+  readonly objects = new Map<string, { value: string; etag: string }>()
+  private revision = 0
 
   async get(key: string) {
-    const value = this.objects.get(key)
-    return value === undefined
+    const object = this.objects.get(key)
+    return object === undefined
       ? null
-      : { etag: `etag-${key}`, text: async () => value }
+      : { etag: object.etag, text: async () => object.value }
   }
 
-  async put(key: string, value: string) {
-    this.objects.set(key, value)
-    return { etag: `etag-${key}` }
+  async put(
+    key: string,
+    value: string,
+    options?: { onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } },
+  ) {
+    const current = this.objects.get(key)
+    if (options?.onlyIf?.etagMatches !== undefined && current?.etag !== options.onlyIf.etagMatches) return null
+    if (options?.onlyIf?.etagDoesNotMatch === '*' && current) return null
+    const object = { value, etag: `etag-${++this.revision}` }
+    this.objects.set(key, object)
+    return { etag: object.etag }
   }
 
-  async list() {
+  async list(options?: { prefix?: string }) {
     return {
-      objects: [...this.objects.keys()].sort().map((key) => ({ key })),
+      objects: [...this.objects.keys()]
+        .filter((key) => key.startsWith(options?.prefix ?? ''))
+        .sort()
+        .map((key) => ({ key })),
       truncated: false,
     }
   }
@@ -54,6 +66,10 @@ const storyboard = {
 } as const
 
 const clients: Client[] = []
+
+const textResult = (result: Awaited<ReturnType<Client['callTool']>>) =>
+  JSON.parse(String((result.content as Array<{ text?: string }>)[0]?.text)) as
+    Record<string, any>
 
 afterEach(async () => {
   while (clients.length) await clients.pop()?.close()
@@ -147,6 +163,129 @@ describe('cloud animation MCP', () => {
       filename: 'online.excalidraw',
       revision: 1,
       uiResourceUri: UI_RESOURCE_URI,
+    })
+  })
+
+  it('matches the current durable project, inspection, and revision contracts', async () => {
+    const bucket = new MemoryBucket()
+    const client = await connectClient(bucket)
+    const tools = await client.listTools()
+    const createTool = tools.tools.find(({ name }) => name === 'create_animation')
+    const reviseTool = tools.tools.find(({ name }) => name === 'revise_animation')
+    expect(createTool?.inputSchema.properties).toMatchObject({
+      saveToWorkspace: { type: 'boolean' },
+      workspaceId: { type: 'string' },
+    })
+    const advertisedOperations = JSON.stringify(
+      reviseTool?.inputSchema.properties?.operations,
+    )
+    for (const operation of [
+      'add_element',
+      'change_text',
+      'set_animation_step',
+      'set_animation_effect',
+      'set_animation_timing',
+      'set_animation_group',
+      'clear_animation',
+      'set_scene',
+      'set_camera_track',
+      'move_element',
+      'update_element',
+      'duplicate_element',
+      'delete_element',
+      'reorder_element',
+      'set_bindings',
+      'set_excalidraw_groups',
+    ]) expect(advertisedOperations).toContain(`"${operation}"`)
+
+    const status = await client.callTool({
+      name: 'get_animation_status',
+      arguments: {},
+    })
+    expect(textResult(status)).toMatchObject({
+      durableProjects: true,
+      optimisticRevisionControl: true,
+      capabilities: {
+        persistence: { workspaces: true, revisionHistory: true },
+        inspection: { semanticProjectIndex: true },
+      },
+      limits: { maxOperationsPerRevision: 100 },
+    })
+
+    const created = await client.callTool({
+      name: 'create_animation',
+      arguments: {
+        storyboard,
+        filename: 'durable-online.excalidraw',
+        saveToWorkspace: true,
+      },
+    })
+    expect(created.structuredContent).toMatchObject({
+      projectId: expect.stringMatching(/^prj_/),
+      workspaceId: expect.stringMatching(/^ws_/),
+      creationReceipt: { revision: 1 },
+      projectIndex: { schemaVersion: 1 },
+    })
+    const projectId = String(
+      (created.structuredContent as Record<string, unknown>).projectId,
+    )
+
+    const revised = await client.callTool({
+      name: 'revise_animation',
+      arguments: {
+        projectId,
+        expectedRevision: 1,
+        operations: [{ type: 'move_element', elementId: 'shape', x: 700, y: 420 }],
+      },
+    })
+    expect(revised.structuredContent).toMatchObject({
+      projectId,
+      revision: 2,
+      mutationReceipt: {
+        previousRevision: 1,
+        revision: 2,
+        updatedElementIds: ['shape'],
+      },
+    })
+
+    const inspected = await client.callTool({
+      name: 'open_animation_studio',
+      arguments: { projectId, revision: 2, elementIds: ['shape'] },
+    })
+    expect(inspected.structuredContent).toMatchObject({
+      projectId,
+      revision: 2,
+      projectIndex: {
+        elements: [expect.objectContaining({ id: 'shape', x: 700, y: 420 })],
+      },
+    })
+
+    const validation = await client.callTool({
+      name: 'validate_animation',
+      arguments: { projectId, revision: 2 },
+    })
+    expect(textResult(validation)).toMatchObject({ valid: true })
+
+    const listed = await client.callTool({
+      name: 'list_animations',
+      arguments: { query: 'Cloud MCP' },
+    })
+    expect(textResult(listed)).toMatchObject({
+      workspaces: [expect.objectContaining({ id: expect.stringMatching(/^ws_/) })],
+      projects: [expect.objectContaining({ projectId, revision: 2 })],
+    })
+
+    const renamed = await client.callTool({
+      name: 'revise_animation',
+      arguments: {
+        projectId,
+        projectAction: { action: 'rename', name: 'Renamed online' },
+      },
+    })
+    expect(renamed.structuredContent).toMatchObject({
+      projectId,
+      filename: 'Renamed online.excalidraw',
+      projectActionReceipt: { action: 'rename' },
     })
   })
 

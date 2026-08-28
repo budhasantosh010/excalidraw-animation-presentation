@@ -1,0 +1,716 @@
+{
+  "schemaVersion": 1,
+  "workspaceId": "ws_00000000000000000000000000000001",
+  "projectId": "prj_00000000000000000000000000000004",
+  "name": "24 drawable 12 step stress animation",
+  "revision": {
+    "id": "rev_00000000000000000000000000000004",
+    "number": 1,
+    "source": "manual",
+    "label": "Stress fixture",
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  "trash": {
+    "state": "active"
+  },
+  "assetHashes": [],
+  "extension": {
+    "version": 1,
+    "fixtureKind": "stress",
+    "unknownFutureField": {
+      "preserved": true
+    }
+  },
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "snapshot": {
+    "type": "excalidraw",
+    "version": 2,
+    "source": "local",
+    "elements": [
+      {
+        "id": "stress-frame",
+        "type": "frame",
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 900,
+        "isDeleted": false,
+        "groupIds": [],
+        "frameId": null,
+        "angle": 0,
+        "opacity": 100,
+        "seed": 500,
+        "version": 1,
+        "versionNonce": 600,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-01a",
+        "type": "rectangle",
+        "x": 80,
+        "y": 80,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 1,
+            "effect": "auto"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 501,
+        "version": 1,
+        "versionNonce": 601,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-01b",
+        "type": "text",
+        "x": 200,
+        "y": 80,
+        "width": 100,
+        "height": 40,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 1,
+            "effect": "fade"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 502,
+        "version": 1,
+        "versionNonce": 602,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-02a",
+        "type": "ellipse",
+        "x": 320,
+        "y": 80,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 2,
+            "effect": "pop"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 503,
+        "version": 1,
+        "versionNonce": 603,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-02b",
+        "type": "line",
+        "x": 440,
+        "y": 110,
+        "width": 100,
+        "height": 0,
+        "isDeleted": false,
+        "groupIds": [],
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            100,
+            0
+          ]
+        ],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 2,
+            "effect": "draw"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 504,
+        "version": 1,
+        "versionNonce": 604,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-03a",
+        "type": "diamond",
+        "x": 560,
+        "y": 80,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 3,
+            "effect": "appear"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 505,
+        "version": 1,
+        "versionNonce": 605,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-03b",
+        "type": "text",
+        "x": 680,
+        "y": 80,
+        "width": 100,
+        "height": 40,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 3,
+            "effect": "fade"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 506,
+        "version": 1,
+        "versionNonce": 606,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-04a",
+        "type": "rectangle",
+        "x": 800,
+        "y": 80,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 4,
+            "effect": "pop"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 507,
+        "version": 1,
+        "versionNonce": 607,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-04b",
+        "type": "line",
+        "x": 920,
+        "y": 110,
+        "width": 100,
+        "height": 0,
+        "isDeleted": false,
+        "groupIds": [],
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            100,
+            0
+          ]
+        ],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 4,
+            "effect": "draw"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 508,
+        "version": 1,
+        "versionNonce": 608,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-05a",
+        "type": "ellipse",
+        "x": 1040,
+        "y": 80,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 5,
+            "effect": "auto"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 509,
+        "version": 1,
+        "versionNonce": 609,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-05b",
+        "type": "text",
+        "x": 1160,
+        "y": 80,
+        "width": 100,
+        "height": 40,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 5,
+            "effect": "fade"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 510,
+        "version": 1,
+        "versionNonce": 610,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-06a",
+        "type": "diamond",
+        "x": 1280,
+        "y": 80,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 6,
+            "effect": "appear"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 511,
+        "version": 1,
+        "versionNonce": 611,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-06b",
+        "type": "line",
+        "x": 1400,
+        "y": 110,
+        "width": 100,
+        "height": 0,
+        "isDeleted": false,
+        "groupIds": [],
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            100,
+            0
+          ]
+        ],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 6,
+            "effect": "draw"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 512,
+        "version": 1,
+        "versionNonce": 612,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-07a",
+        "type": "rectangle",
+        "x": 80,
+        "y": 300,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 7,
+            "effect": "pop"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 513,
+        "version": 1,
+        "versionNonce": 613,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-07b",
+        "type": "text",
+        "x": 200,
+        "y": 300,
+        "width": 100,
+        "height": 40,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 7,
+            "effect": "fade"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 514,
+        "version": 1,
+        "versionNonce": 614,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-08a",
+        "type": "ellipse",
+        "x": 320,
+        "y": 300,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 8,
+            "effect": "auto"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 515,
+        "version": 1,
+        "versionNonce": 615,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-08b",
+        "type": "line",
+        "x": 440,
+        "y": 330,
+        "width": 100,
+        "height": 0,
+        "isDeleted": false,
+        "groupIds": [],
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            100,
+            0
+          ]
+        ],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 8,
+            "effect": "draw"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 516,
+        "version": 1,
+        "versionNonce": 616,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-09a",
+        "type": "diamond",
+        "x": 560,
+        "y": 300,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 9,
+            "effect": "appear"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 517,
+        "version": 1,
+        "versionNonce": 617,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-09b",
+        "type": "text",
+        "x": 680,
+        "y": 300,
+        "width": 100,
+        "height": 40,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 9,
+            "effect": "fade"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 518,
+        "version": 1,
+        "versionNonce": 618,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-10a",
+        "type": "rectangle",
+        "x": 800,
+        "y": 300,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 10,
+            "effect": "pop"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 519,
+        "version": 1,
+        "versionNonce": 619,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-10b",
+        "type": "line",
+        "x": 920,
+        "y": 330,
+        "width": 100,
+        "height": 0,
+        "isDeleted": false,
+        "groupIds": [],
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            100,
+            0
+          ]
+        ],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 10,
+            "effect": "draw"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 520,
+        "version": 1,
+        "versionNonce": 620,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-11a",
+        "type": "ellipse",
+        "x": 1040,
+        "y": 300,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 11,
+            "effect": "auto"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 521,
+        "version": 1,
+        "versionNonce": 621,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-11b",
+        "type": "text",
+        "x": 1160,
+        "y": 300,
+        "width": 100,
+        "height": 40,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 11,
+            "effect": "fade"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 522,
+        "version": 1,
+        "versionNonce": 622,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-12a",
+        "type": "diamond",
+        "x": 1280,
+        "y": 300,
+        "width": 100,
+        "height": 60,
+        "isDeleted": false,
+        "groupIds": [],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 12,
+            "effect": "appear"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 523,
+        "version": 1,
+        "versionNonce": 623,
+        "updated": 1,
+        "locked": false
+      },
+      {
+        "id": "stress-12b",
+        "type": "line",
+        "x": 1400,
+        "y": 330,
+        "width": 100,
+        "height": 0,
+        "isDeleted": false,
+        "groupIds": [],
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            100,
+            0
+          ]
+        ],
+        "customData": {
+          "sanverseAnimation": {
+            "version": 1,
+            "sceneId": "stress",
+            "step": 12,
+            "effect": "draw"
+          }
+        },
+        "angle": 0,
+        "opacity": 100,
+        "seed": 524,
+        "version": 1,
+        "versionNonce": 624,
+        "updated": 1,
+        "locked": false
+      }
+    ],
+    "appState": {
+      "viewBackgroundColor": "#ffffff",
+      "gridSize": null
+    },
+    "files": {}
+  }
+}

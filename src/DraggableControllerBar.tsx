@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -8,6 +9,8 @@ import {
 } from 'react'
 
 import {
+  clampControllerPosition,
+  CONTROLLER_EDGE_GAP,
   getDraggedControllerPosition,
   type ControllerPlacement,
   type ControllerPosition,
@@ -17,6 +20,9 @@ type DraggableControllerBarProps = {
   ariaLabel: string
   children: ReactNode
   className: string
+  collapsed?: boolean
+  leftInset?: number
+  onCollapsedChange?: (collapsed: boolean) => void
   placement: ControllerPlacement
   role?: 'navigation' | 'region'
 }
@@ -31,13 +37,30 @@ export function DraggableControllerBar({
   ariaLabel,
   children,
   className,
+  collapsed = false,
+  leftInset = 0,
+  onCollapsedChange,
   placement,
   role = 'region',
 }: DraggableControllerBarProps) {
   const barRef = useRef<HTMLDivElement | null>(null)
   const activeDrag = useRef<ActiveDrag | null>(null)
   const [dragging, setDragging] = useState(false)
-  const setControllerSize = placement.setControllerSize
+  const {
+    controllerSize,
+    position,
+    safeArea,
+    setControllerSize,
+    setPosition,
+    viewport,
+  } = placement
+  const effectiveSafeArea = useMemo(
+    () => ({
+      ...safeArea,
+      left: Math.max(safeArea.left, leftInset),
+    }),
+    [leftInset, safeArea],
+  )
 
   useEffect(() => {
     const bar = barRef.current
@@ -59,6 +82,25 @@ export function DraggableControllerBar({
       window.removeEventListener('resize', measure)
     }
   }, [setControllerSize])
+
+  useEffect(() => {
+    if (!position || !controllerSize.width || !controllerSize.height) return
+    const next = clampControllerPosition(
+      position,
+      viewport,
+      controllerSize,
+      effectiveSafeArea,
+    )
+    if (next.x !== position.x || next.y !== position.y) {
+      setPosition(next)
+    }
+  }, [
+    controllerSize,
+    effectiveSafeArea,
+    position,
+    setPosition,
+    viewport,
+  ])
 
   const handlePointerDown = (
     event: ReactPointerEvent<HTMLSpanElement>,
@@ -87,7 +129,7 @@ export function DraggableControllerBar({
         { x: event.clientX, y: event.clientY },
         placement.viewport,
         placement.controllerSize,
-        placement.safeArea,
+        effectiveSafeArea,
       ),
     )
   }
@@ -102,9 +144,10 @@ export function DraggableControllerBar({
   }
 
   const style: CSSProperties = placement.position
-    ? {
-        left: placement.position.x,
-        top: placement.position.y,
+      ? {
+          left: placement.position.x,
+          top: placement.position.y,
+          maxWidth: `calc(100vw - ${effectiveSafeArea.left + effectiveSafeArea.right + CONTROLLER_EDGE_GAP * 2}px)`,
       }
     : {
         left: 0,
@@ -115,7 +158,7 @@ export function DraggableControllerBar({
   return (
     <div
       ref={barRef}
-      className={`${className} draggable-controller${dragging ? ' draggable-controller--dragging' : ''}`}
+      className={`${className} draggable-controller${collapsed ? ' draggable-controller--collapsed' : ''}${dragging ? ' draggable-controller--dragging' : ''}`}
       role={role}
       aria-label={ariaLabel}
       style={style}
@@ -133,15 +176,30 @@ export function DraggableControllerBar({
       >
         <span aria-hidden="true">⠿</span>
       </span>
-      <button
-        className="controller-reset-position"
-        type="button"
-        title="Reset control position"
-        onClick={placement.resetPosition}
-      >
-        Reset position
-      </button>
-      {children}
+      {onCollapsedChange ? (
+        <button
+          className="controller-collapse-toggle"
+          type="button"
+          aria-label={collapsed ? 'Expand animation controls' : 'Minimize animation controls'}
+          title={collapsed ? 'Expand animation controls' : 'Minimize animation controls'}
+          onClick={() => onCollapsedChange(!collapsed)}
+        >
+          <span aria-hidden="true">{collapsed ? '+' : '−'}</span>
+        </button>
+      ) : null}
+      {!collapsed ? (
+        <>
+          <button
+            className="controller-reset-position"
+            type="button"
+            title="Reset control position"
+            onClick={placement.resetPosition}
+          >
+            Reset position
+          </button>
+          {children}
+        </>
+      ) : null}
     </div>
   )
 }

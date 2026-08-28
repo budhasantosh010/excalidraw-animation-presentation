@@ -1,12 +1,10 @@
 import {
+  applyRevisionOperations,
   buildAnimationDocument,
   summarizeAnimationDocument,
   validateAnimationDocument,
   type ExcalidrawDocument,
 } from './animation-tools.ts'
-import { MAX_ANIMATION_STEP } from '../src/animation.ts'
-
-const effects = new Set(['auto', 'appear', 'fade', 'pop', 'draw'])
 
 export type R2BucketLike = {
   get(key: string): Promise<{
@@ -17,14 +15,15 @@ export type R2BucketLike = {
     key: string,
     value: string,
     options?: {
+      customMetadata?: Record<string, string>
       onlyIf?: {
         etagMatches?: string
         etagDoesNotMatch?: string
       }
     },
   ): Promise<{ etag: string } | null>
-  list(options?: { cursor?: string }): Promise<{
-    objects: Array<{ key: string }>
+  list(options?: { cursor?: string; prefix?: string; include?: ['customMetadata'] }): Promise<{
+    objects: Array<{ key: string; customMetadata?: Record<string, string> }>
     truncated: boolean
     cursor?: string
   }>
@@ -96,45 +95,10 @@ export class R2AnimationStore {
     operations: Array<Record<string, unknown>>,
   ) {
     const source = await this.readObject(filename)
-    const document = JSON.parse(await source.text()) as ExcalidrawDocument
-    const byId = new Map(
-      document.elements.map((element) => [element.id, element]),
+    const document = applyRevisionOperations(
+      JSON.parse(await source.text()) as ExcalidrawDocument,
+      operations,
     )
-    for (const operation of operations) {
-      const element = byId.get(String(operation.elementId ?? ''))
-      if (!element) throw new Error(`Element not found: ${operation.elementId}`)
-      if (operation.type === 'change_text' && element.type === 'text') {
-        element.text = String(operation.text ?? '')
-        element.rawText = element.text
-        element.originalText = element.text
-      } else if (operation.type === 'set_animation_step') {
-        const step = Number(operation.step)
-        if (
-          !Number.isSafeInteger(step) ||
-          step < 1 ||
-          step > MAX_ANIMATION_STEP
-        ) {
-          throw new Error('Invalid animation step.')
-        }
-        element.customData.sanverseAnimation.step = step
-      } else if (operation.type === 'set_animation_effect') {
-        const effect = String(operation.effect)
-        if (!effects.has(effect)) throw new Error('Invalid animation effect.')
-        element.customData.sanverseAnimation.effect = effect
-      } else if (operation.type === 'move_element') {
-        const x = Number(operation.x)
-        const y = Number(operation.y)
-        if (!Number.isFinite(x) || !Number.isFinite(y)) {
-          throw new Error('Invalid position.')
-        }
-        element.x = x
-        element.y = y
-      } else {
-        throw new Error(`Unsupported revision operation: ${operation.type}`)
-      }
-      element.version = Number(element.version ?? 0) + 1
-      element.updated = Date.now()
-    }
     const validation = validateAnimationDocument(document)
     if (!validation.valid) throw new Error(validation.errors.join(' '))
     const stored = await this.bucket.put(

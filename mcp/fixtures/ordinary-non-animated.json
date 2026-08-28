@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "workspaceId": "ws_00000000000000000000000000000001",
+  "projectId": "prj_00000000000000000000000000000001",
+  "name": "Ordinary non-animated drawing",
+  "revision": { "id": "rev_00000000000000000000000000000001", "number": 1, "source": "import", "label": "Sanitized fixture", "createdAt": "2026-01-01T00:00:00.000Z" },
+  "trash": { "state": "active" },
+  "assetHashes": [],
+  "extension": { "version": 1, "fixtureKind": "ordinary" },
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "snapshot": {
+    "type": "excalidraw",
+    "version": 2,
+    "source": "local",
+    "elements": [
+      { "id": "ordinary-box", "type": "rectangle", "x": 100, "y": 120, "width": 240, "height": 120, "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent", "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1, "opacity": 100, "groupIds": [], "frameId": null, "index": "a0", "roundness": { "type": 3 }, "seed": 101, "version": 1, "versionNonce": 201, "isDeleted": false, "boundElements": null, "updated": 1, "link": null, "locked": false }
+    ],
+    "appState": { "viewBackgroundColor": "#ffffff", "gridSize": null },
+    "files": {}
+  }
+}
